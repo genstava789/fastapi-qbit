@@ -61,6 +61,27 @@ class QBitService:
         )
         return str(result)
 
+    def add_torrent_file(
+        self,
+        torrent_file_bytes: bytes,
+        save_path: Optional[str] = None,
+        category: Optional[str] = None,
+        is_paused: bool = False,
+        tags: Optional[List[str]] = None,
+    ) -> str:
+        """Adds a torrent from a .torrent file bytes to qBittorrent."""
+        client = self.get_client()
+        target_path = save_path or settings.DEFAULT_SAVE_PATH
+
+        result = client.torrents_add(
+            torrent_files=torrent_file_bytes,
+            save_path=target_path,
+            category=category,
+            is_paused=is_paused,
+            tags=",".join(tags) if tags else None,
+        )
+        return str(result)
+
     def list_torrents(
         self,
         status_filter: Optional[str] = None,
@@ -126,6 +147,16 @@ class QBitService:
     def delete_torrent(self, torrent_hash: str, delete_files: bool = False) -> None:
         client = self.get_client()
         client.torrents_delete(torrent_hashes=torrent_hash, delete_files=delete_files)
+
+    def export_torrent_file(self, torrent_hash: str) -> bytes:
+        """Exports the .torrent file data for a given torrent hash."""
+        client = self.get_client()
+        return client.torrents_export(torrent_hash=torrent_hash)
+
+    def add_trackers(self, torrent_hash: str, trackers: List[str]) -> None:
+        """Adds trackers to an existing torrent."""
+        client = self.get_client()
+        client.torrents_add_trackers(torrent_hash=torrent_hash, urls=trackers)
 
 
 qbit_service = QBitService()
