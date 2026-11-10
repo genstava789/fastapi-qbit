@@ -37,3 +37,4 @@ services:
     depends_on:
       - qbittorrent
     restart: unless-stopped
+
