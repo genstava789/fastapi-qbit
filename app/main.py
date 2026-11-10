@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from app.api import api_router_v1
+from app.api import api_router_v1, proxy_router
 from app.core.config import settings
 from app.services.qbit_service import qbit_service
 
@@ -47,6 +47,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount WebTorrent reverse proxy router
+app.include_router(proxy_router)
 
 # Mount API routes
 app.include_router(api_router_v1, prefix=settings.API_V1_STR)
@@ -184,9 +187,10 @@ def root_dashboard():
             <p class="desc">
                 API qBittorrent siap digunakan. Anda dapat menambahkan tautan magnet melalui curl atau antarmuka dokumentasi Swagger UI.
             </p>
-            <div class="quick-actions">
-                <a class="btn" href="/docs" target="_blank">Swagger Documentation</a>
-                <a class="btn" href="/redoc" target="_blank">ReDoc Documentation</a>
+            <div class="quick-actions" style="grid-template-columns: 1fr 1fr 1fr;">
+                <a class="btn" href="/webtorrent/" target="_blank" style="background: #1e3a8a; border-color: #3b82f6;">qBittorrent Web UI</a>
+                <a class="btn" href="/docs" target="_blank">Swagger Docs</a>
+                <a class="btn" href="/redoc" target="_blank">ReDoc</a>
             </div>
             <div class="curl-box">
                 <div class="curl-header">Contoh Menambahkan Magnet Link via cURL:</div>

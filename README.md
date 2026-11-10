@@ -115,11 +115,12 @@ Atau jalankan secara manual:
 
 ---
 
-## 🌐 Dokumentasi API
+## 🌐 Akses Web UI & Dokumentasi API
 
-Buka alamat berikut di browser:
-- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **qBittorrent Web UI**: [https://mild-leaf.nyc.boxd.sh/webtorrent/](https://mild-leaf.nyc.boxd.sh/webtorrent/)
+- **Swagger UI (Interactive API Docs)**: [https://api.mild-leaf.nyc.boxd.sh/docs](https://api.mild-leaf.nyc.boxd.sh/docs)
+- **ReDoc Documentation**: [https://api.mild-leaf.nyc.boxd.sh/redoc](https://api.mild-leaf.nyc.boxd.sh/redoc)
+- **FastAPI Main Dashboard**: [https://mild-leaf.nyc.boxd.sh/](https://mild-leaf.nyc.boxd.sh/)
 
 ---
 
