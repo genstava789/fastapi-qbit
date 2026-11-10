@@ -1,0 +1,1 @@
+"""FastAPI qBittorrent Application Package."""
