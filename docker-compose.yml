@@ -8,13 +8,13 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Etc/UTC
-      - WEBUI_PORT=8080
+      - WEBUI_PORT=8089
       - TORRENTING_PORT=6881
     volumes:
       - ./qbit-config:/config
       - ./downloads:/downloads
     ports:
-      - "8080:8080"
+      - "8089:8089"
       - "6881:6881"
       - "6881:6881/udp"
     restart: unless-stopped
@@ -28,7 +28,7 @@ services:
       - SERVER_PORT=8000
       - API_V1_STR=/api/v1
       - QBIT_HOST=qbittorrent
-      - QBIT_PORT=8080
+      - QBIT_PORT=8089
       - QBIT_USERNAME=admin
       - QBIT_PASSWORD=adminadmin
       - DEFAULT_SAVE_PATH=/downloads/

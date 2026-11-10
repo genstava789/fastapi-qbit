@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # qBittorrent WebUI Settings
     QBIT_HOST: str = "127.0.0.1"
-    QBIT_PORT: int = 8080
+    QBIT_PORT: int = 8089
     QBIT_USERNAME: str = "admin"
     QBIT_PASSWORD: str = ""
     QBIT_VERIFY_WEBUI_CERTIFICATE: bool = False
