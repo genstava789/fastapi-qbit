@@ -14,10 +14,12 @@ EXCLUDE_REQ_HEADERS = {
     "content-length",
     "connection",
     "keep-alive",
+    "accept-encoding",
 }
 
 EXCLUDE_RESP_HEADERS = {
     "content-length",
+    "content-encoding",
     "transfer-encoding",
     "connection",
     "keep-alive",
@@ -58,8 +60,9 @@ async def webtorrent_proxy(request: Request, full_path: str = ""):
         for k, v in request.headers.items()
         if k.lower() not in EXCLUDE_REQ_HEADERS
     }
-    # qBittorrent expects local Host header
+    # qBittorrent expects local Host header and uncompressed responses
     req_headers["host"] = settings.qbit_base_url
+    req_headers["accept-encoding"] = "identity"
 
     body = await request.body()
 
@@ -80,14 +83,16 @@ async def webtorrent_proxy(request: Request, full_path: str = ""):
         )
 
     # Build header list for Starlette Response
+    content_type = resp.headers.get("content-type")
     response = Response(
         content=resp.content,
         status_code=resp.status_code,
+        media_type=content_type,
     )
 
     # Filter and copy headers
     for k, v in resp.headers.items():
-        if k.lower() not in EXCLUDE_RESP_HEADERS and k.lower() != "set-cookie":
+        if k.lower() not in EXCLUDE_RESP_HEADERS and k.lower() not in {"set-cookie", "content-type"}:
             response.headers[k] = v
 
     # Forward Set-Cookie headers
