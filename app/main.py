@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from app.api import api_router_v1, proxy_router
+from app.api import api_router_v1, proxy_router, tracker_router
 from app.core.config import settings
 from app.services.qbit_service import qbit_service
 
@@ -50,6 +50,9 @@ app.add_middleware(
 
 # Mount WebTorrent reverse proxy router
 app.include_router(proxy_router)
+
+# Mount BitTorrent tracker
+app.include_router(tracker_router)
 
 # Mount API routes
 app.include_router(api_router_v1, prefix=settings.API_V1_STR)
