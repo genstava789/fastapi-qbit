@@ -24,6 +24,12 @@ async def tracker_announce(request: Request):
     Always includes this server's public peer endpoint so external clients
     can connect and download immediately without NAT/IP mismatches.
     """
+    client_real_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or request.headers.get("x-real-ip")
+        or (request.client.host if request.client else "127.0.0.1")
+    )
+    logger.warning(f"Announce received from client_real_ip={client_real_ip}, client.host={request.client.host if request.client else None}, headers={dict(request.headers)}")
     raw_query = request.scope.get("query_string", b"").decode("latin-1")
 
     params = {}
@@ -37,7 +43,7 @@ async def tracker_announce(request: Request):
     info_hash_hex = info_hash_bytes.hex()
 
     client_port = int(params.get("port", 0)) if params.get("port", "").isdigit() else 0
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = client_real_ip
 
     if info_hash_hex not in PEERS:
         PEERS[info_hash_hex] = set()
@@ -45,12 +51,19 @@ async def tracker_announce(request: Request):
     # Always ensure our public seeder is registered in this swarm
     PEERS[info_hash_hex].add((PUBLIC_SEEDER_IP, PUBLIC_SEEDER_PORT))
 
-    if client_ip not in ("127.0.0.1", "::1", "10.122.170.184") and client_port > 0:
+    is_internal = (
+        client_ip in ("127.0.0.1", "::1", "10.122.170.184", PUBLIC_SEEDER_IP)
+        or client_ip.startswith("10.")
+        or client_ip.startswith("172.")
+        or client_ip.startswith("192.168.")
+    )
+
+    if not is_internal and client_port > 0:
         PEERS[info_hash_hex].add((client_ip, client_port))
 
     compact = params.get("compact", "1") != "0"
 
-    # Don't send client back their own endpoint if multiple peers exist
+    # Always ensure the public seeder is included for any peer other than the seeder itself
     peers_to_send = [
         p for p in PEERS[info_hash_hex]
         if not (p[0] == client_ip and p[1] == client_port)
@@ -98,3 +111,4 @@ async def tracker_announce(request: Request):
         content=bencoded,
         media_type="text/plain",
     )
+
