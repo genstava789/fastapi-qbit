@@ -35,7 +35,8 @@ def add_magnet(payload: AddMagnetRequest):
         else:
             return TorrentActionResponse(
                 success=False,
-                message=f"qBittorrent responded with: {result}",
+                message=f"Could not add magnet link (it may already exist in your download queue: '{result}').",
+                data={"result": result},
             )
     except Exception as e:
         raise HTTPException(
@@ -162,3 +163,4 @@ def delete_torrent(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete torrent: {str(e)}",
         )
+

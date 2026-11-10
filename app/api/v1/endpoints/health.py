@@ -15,3 +15,4 @@ def check_health():
         qbittorrent_connected=is_connected,
         qbittorrent_version=qbit_ver,
     )
+

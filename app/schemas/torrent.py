@@ -59,3 +59,4 @@ class HealthResponse(BaseModel):
     app_version: str
     qbittorrent_connected: bool
     qbittorrent_version: Optional[str] = None
+
