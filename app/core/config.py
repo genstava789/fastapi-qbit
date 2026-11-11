@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Download directory
     DEFAULT_SAVE_PATH: str = "/home/boxd/Downloads/"
 
+    # Google Drive defaults (optional, actual settings stored in gdrive_settings.json)
+    GDRIVE_DEFAULT_UPLOAD_FOLDER_ID: str | None = None
+    GDRIVE_DEFAULT_UPLOAD_FOLDER_NAME: str | None = None
+
     @property
     def qbit_base_url(self) -> str:
         return f"{self.QBIT_HOST}:{self.QBIT_PORT}"

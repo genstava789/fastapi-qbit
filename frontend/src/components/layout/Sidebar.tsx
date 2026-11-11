@@ -8,6 +8,7 @@ import {
   GitFork,
   Wifi,
   FolderOpen,
+  Cloud,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -24,6 +25,7 @@ const navItems = [
   { path: "/crossseed", icon: GitFork, label: "Cross-Seed" },
   { path: "/network", icon: Wifi, label: "Network Agent" },
   { path: "/files", icon: FolderOpen, label: "File Browser" },
+  { path: "/drive", icon: Cloud, label: "Google Drive" },
   { path: "/settings", icon: Settings, label: "Settings" },
 ];
 

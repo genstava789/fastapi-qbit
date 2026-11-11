@@ -22,6 +22,9 @@ const NetworkPage = lazy(() =>
 const FileBrowserPage = lazy(() =>
   import("@/pages/FileBrowserPage").then((m) => ({ default: m.FileBrowserPage }))
 );
+const DrivePage = lazy(() =>
+  import("@/pages/DrivePage").then((m) => ({ default: m.DrivePage }))
+);
 const SettingsPage = lazy(() =>
   import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
 );
@@ -47,6 +50,7 @@ export default function App() {
             <Route path="/crossseed" element={<CrossSeedPage />} />
             <Route path="/network" element={<NetworkPage />} />
             <Route path="/files" element={<FileBrowserPage />} />
+            <Route path="/drive" element={<DrivePage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

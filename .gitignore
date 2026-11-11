@@ -57,4 +57,10 @@ node_modules/
 # Docker runtime volumes
 qbit-config/
 
+# Google Drive credentials & tokens
+credentials.json
+token.json
+gdrive_settings.json
+
+
 

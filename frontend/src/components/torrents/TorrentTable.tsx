@@ -26,9 +26,13 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  UploadCloud,
 } from "lucide-react";
 import type { TorrentItem, SortDirection } from "@/types";
 import { TorrentDetailModal } from "./TorrentDetailModal";
+import { useDriveAuthStatus } from "@/hooks/useDrive";
+import { DriveAuthModal, UploadToDriveModal } from "@/components/drive";
+import toast from "react-hot-toast";
 
 const PAGE_SIZE = 10;
 
@@ -305,6 +309,22 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
     y: number;
     hash: string;
   } | null>(null);
+
+  const { data: driveAuth } = useDriveAuthStatus();
+  const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
+  const [uploadDrivePath, setUploadDrivePath] = useState<string | null>(null);
+
+  const handleUploadToDrive = (t: TorrentItem) => {
+    if (!driveAuth?.authenticated) {
+      toast("Silakan hubungkan Google Drive terlebih dahulu", { icon: "🔐" });
+      setDriveAuthModalOpen(true);
+      return;
+    }
+    const fullPath = t.save_path.endsWith("/")
+      ? `${t.save_path}${t.name}`
+      : `${t.save_path}/${t.name}`;
+    setUploadDrivePath(fullPath);
+  };
 
   const filtered = useMemo(() => {
     let list = [...torrents];
@@ -593,6 +613,14 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
                           <FileDown className="w-4 h-4" />
                         </a>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleUploadToDrive(t)}
+                        className="p-1.5 rounded-lg hover:bg-accent/10 text-text-muted hover:text-accent transition-colors"
+                        title="Upload to Google Drive"
+                      >
+                        <UploadCloud className="w-4 h-4" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -654,6 +682,17 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-secondary hover:bg-glass-hover hover:text-text-primary transition-colors"
               >
                 <Pause className="w-4 h-4" /> Pause
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = torrents.find((t) => t.hash === contextMenu.hash);
+                  setContextMenu(null);
+                  if (target) handleUploadToDrive(target);
+                }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-secondary hover:bg-glass-hover hover:text-text-primary transition-colors"
+              >
+                <UploadCloud className="w-4 h-4 text-accent" /> Upload to Drive
               </button>
               <hr className="border-glass-border my-1" />
               <button
@@ -775,6 +814,19 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
               </a>
             )}
 
+            <button
+              type="button"
+              onClick={() => {
+                const t = mobileSheetTorrent;
+                setMobileSheetTorrent(null);
+                handleUploadToDrive(t);
+              }}
+              className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover"
+            >
+              <UploadCloud className="w-5 h-5 text-accent" />
+              Upload to Google Drive
+            </button>
+
             <div className="pt-2 border-t border-glass-border">
               <button
                 type="button"
@@ -796,6 +848,19 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
         hash={detailHash}
         onClose={() => setDetailHash(null)}
       />
+
+      <DriveAuthModal
+        open={driveAuthModalOpen}
+        onClose={() => setDriveAuthModalOpen(false)}
+      />
+
+      {uploadDrivePath && (
+        <UploadToDriveModal
+          open={!!uploadDrivePath}
+          onClose={() => setUploadDrivePath(null)}
+          filePath={uploadDrivePath}
+        />
+      )}
     </>
   );
 }

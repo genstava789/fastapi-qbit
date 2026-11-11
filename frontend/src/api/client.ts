@@ -6,6 +6,11 @@ import type {
   SystemStats,
   TorrentActionResponse,
   TorrentItem,
+  DriveBreadcrumb,
+  DriveFileItem,
+  DriveListResponse,
+  DriveStorageQuota,
+  DriveUploadProgress,
 } from "@/types";
 
 export function createApiClient(baseUrl: string, apiPrefix = "/api/v1"): AxiosInstance {
@@ -118,6 +123,123 @@ export class QbitApi {
 
   getExportUrl(hash: string): string {
     return `${this.client.defaults.baseURL}/torrents/${hash}/export`;
+  }
+}
+
+export class DriveApi {
+  private client: AxiosInstance;
+
+  constructor(baseUrl: string, apiPrefix = "/api/v1") {
+    this.client = createApiClient(baseUrl, apiPrefix);
+  }
+
+  async getAuthStatus(): Promise<{ authenticated: boolean; auth_url?: string | null }> {
+    const { data } = await this.client.get<{ authenticated: boolean; auth_url?: string | null }>("/drive/auth/status");
+    return data;
+  }
+
+  async getAuthUrl(redirectUri?: string): Promise<{ url: string; auth_url: string }> {
+    const { data } = await this.client.get<{ auth_url?: string; url?: string }>("/drive/auth/url", {
+      params: redirectUri ? { redirect_uri: redirectUri } : undefined,
+    });
+    const url = data.auth_url || data.url || "";
+    return { url, auth_url: url };
+  }
+
+  async exchangeAuthCode(
+    code: string,
+    redirectUri?: string
+  ): Promise<{ success: boolean; message: string }> {
+    const { data } = await this.client.post<{ success: boolean; message: string }>(
+      "/drive/auth/callback",
+      { code, redirect_uri: redirectUri }
+    );
+    return data;
+  }
+
+  async logout(): Promise<{ success: boolean }> {
+    const { data } = await this.client.post<{ success: boolean }>("/drive/auth/logout");
+    return data;
+  }
+
+  async listFiles(folderId?: string, pageToken?: string): Promise<DriveListResponse> {
+    const { data } = await this.client.get<DriveListResponse>("/drive/files", {
+      params: { folder_id: folderId, page_token: pageToken },
+    });
+    return data;
+  }
+
+  async getFolderPath(fileId: string): Promise<DriveBreadcrumb[]> {
+    const { data } = await this.client.get<DriveBreadcrumb[]>(
+      `/drive/files/${fileId}/path`
+    );
+    return data;
+  }
+
+  async getStorageQuota(): Promise<DriveStorageQuota> {
+    const { data } = await this.client.get<DriveStorageQuota>("/drive/storage");
+    return data;
+  }
+
+  async createFolder(
+    name: string,
+    parentId?: string
+  ): Promise<DriveFileItem> {
+    const { data } = await this.client.post<DriveFileItem>("/drive/folders", {
+      name,
+      parent_id: parentId,
+    });
+    return data;
+  }
+
+  async startUpload(
+    filePath: string,
+    folderId?: string
+  ): Promise<{ upload_id: string }> {
+    const { data } = await this.client.post<{ upload_id: string }>("/drive/upload", {
+      file_path: filePath,
+      folder_id: folderId,
+    });
+    return data;
+  }
+
+  async getUploadProgress(uploadId: string): Promise<DriveUploadProgress> {
+    const { data } = await this.client.get<DriveUploadProgress>(
+      `/drive/upload/${uploadId}/progress`
+    );
+    return data;
+  }
+
+  async listUploads(): Promise<DriveUploadProgress[]> {
+    const { data } = await this.client.get<DriveUploadProgress[]>("/drive/uploads");
+    return data;
+  }
+
+  async getDownloadUrl(fileId: string): Promise<{ url: string; download_url: string }> {
+    const { data } = await this.client.get<{ download_url?: string; url?: string }>(
+      `/drive/download/${fileId}`
+    );
+    const url = data.download_url || data.url || "";
+    return { url, download_url: url };
+  }
+
+  async getDefaultPath(): Promise<{ folder_id: string | null; folder_name: string | null }> {
+    const { data } = await this.client.get<{
+      folder_id: string | null;
+      folder_name: string | null;
+    }>("/drive/default-path");
+    return data;
+  }
+
+  async setDefaultPath(
+    folderId: string,
+    folderName: string
+  ): Promise<{ success: boolean }> {
+    const { data } = await this.client.post<{ success: boolean }>(
+      "/drive/default-path",
+      { folder_id: folderId, folder_name: folderName }
+    );
+    return data;
   }
 }
 

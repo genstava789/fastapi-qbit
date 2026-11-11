@@ -13,9 +13,12 @@ import {
   MoreVertical,
   RefreshCw,
   X,
+  UploadCloud,
 } from "lucide-react";
 import { ListSkeleton, Skeleton } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
+import { useDriveAuthStatus } from "@/hooks/useDrive";
+import { DriveAuthModal, UploadToDriveModal } from "@/components/drive";
 import toast from "react-hot-toast";
 import type { TorrentItem } from "@/types";
 
@@ -177,7 +180,9 @@ function FolderItem({
                     onOpenActionMenu({
                       type: "torrent",
                       title: t.name,
-                      savePath: t.save_path,
+                      savePath: t.save_path.endsWith("/")
+                        ? `${t.save_path}${t.name}`
+                        : `${t.save_path}/${t.name}`,
                       torrentHash: t.hash,
                     })
                   }
@@ -230,6 +235,19 @@ export function FileBrowserPage() {
   );
   const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
+  const { data: driveAuth } = useDriveAuthStatus();
+  const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
+  const [uploadDrivePath, setUploadDrivePath] = useState<string | null>(null);
+
+  const handleUploadToDrive = (target: ActionTarget) => {
+    setActionTarget(null);
+    if (!driveAuth?.authenticated) {
+      toast("Silakan hubungkan Google Drive terlebih dahulu", { icon: "🔐" });
+      setDriveAuthModalOpen(true);
+    } else {
+      setUploadDrivePath(target.savePath);
+    }
+  };
 
   const filteredTree = useMemo(() => {
     if (!torrents) return null;
@@ -359,6 +377,15 @@ export function FileBrowserPage() {
 
             <button
               type="button"
+              onClick={() => handleUploadToDrive(actionTarget)}
+              className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover transition-colors"
+            >
+              <UploadCloud className="w-5 h-5 text-accent" />
+              Upload to Google Drive
+            </button>
+
+            <button
+              type="button"
               onClick={() => {
                 copyPath(actionTarget.savePath);
                 setActionTarget(null);
@@ -387,6 +414,19 @@ export function FileBrowserPage() {
             )}
           </div>
         </div>
+      )}
+
+      <DriveAuthModal
+        open={driveAuthModalOpen}
+        onClose={() => setDriveAuthModalOpen(false)}
+      />
+
+      {uploadDrivePath && (
+        <UploadToDriveModal
+          open={!!uploadDrivePath}
+          onClose={() => setUploadDrivePath(null)}
+          filePath={uploadDrivePath}
+        />
       )}
     </div>
   );

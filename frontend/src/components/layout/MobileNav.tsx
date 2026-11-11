@@ -7,7 +7,7 @@ import {
   Download,
   Search,
   FolderOpen,
-  Menu,
+  Cloud,
   GitFork,
   Wifi,
   Settings,
@@ -23,6 +23,7 @@ const bottomNavItems = [
   { path: "/torrents", icon: Download, label: "Torrents" },
   { path: "/prowlarr", icon: Search, label: "Search" },
   { path: "/files", icon: FolderOpen, label: "Files" },
+  { path: "/drive", icon: Cloud, label: "Drive" },
 ];
 
 const drawerNavItems = [
@@ -32,11 +33,11 @@ const drawerNavItems = [
   { path: "/crossseed", icon: GitFork, label: "Cross-Seed" },
   { path: "/network", icon: Wifi, label: "Network Agent" },
   { path: "/files", icon: FolderOpen, label: "File Browser" },
+  { path: "/drive", icon: Cloud, label: "Google Drive" },
   { path: "/settings", icon: Settings, label: "Settings" },
 ];
 
 export function MobileBottomNav() {
-  const mobileMenuOpen = useAppStore((s) => s.mobileMenuOpen);
   const setMobileMenuOpen = useAppStore((s) => s.setMobileMenuOpen);
 
   return (
@@ -75,28 +76,6 @@ export function MobileBottomNav() {
             )}
           </NavLink>
         ))}
-
-        {/* More / Drawer Button */}
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className={cn(
-            "flex flex-col items-center justify-center gap-1 min-h-[44px] text-[11px] font-medium transition-colors",
-            mobileMenuOpen
-              ? "text-accent"
-              : "text-text-secondary hover:text-text-primary"
-          )}
-        >
-          <div
-            className={cn(
-              "px-3 py-1 rounded-full transition-colors",
-              mobileMenuOpen ? "bg-accent/15" : "bg-transparent"
-            )}
-          >
-            <Menu className="w-5 h-5" />
-          </div>
-          <span>More</span>
-        </button>
       </div>
     </nav>
   );

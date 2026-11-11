@@ -103,6 +103,41 @@ export interface FileItem {
   children?: FileItem[];
 }
 
+export interface DriveFileItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number | null;
+  modifiedTime: string | null;
+  parents: string[] | null;
+}
+
+export interface DriveListResponse {
+  files: DriveFileItem[];
+  nextPageToken: string | null;
+}
+
+export interface DriveStorageQuota {
+  limit: number;
+  usage: number;
+  usageInDrive: number;
+  usageInTrash: number;
+}
+
+export interface DriveUploadProgress {
+  upload_id: string;
+  filename: string;
+  progress_percent: number;
+  status: string;
+  bytes_uploaded: number;
+  total_bytes: number;
+}
+
+export interface DriveBreadcrumb {
+  id: string;
+  name: string;
+}
+
 export type SortDirection = "asc" | "desc";
 export type TorrentFilter =
   | "all"

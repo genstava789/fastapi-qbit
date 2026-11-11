@@ -1,0 +1,310 @@
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from app.schemas.gdrive import (
+    DriveAuthCodeRequest,
+    DriveAuthStatusResponse,
+    DriveBreadcrumb,
+    DriveCreateFolderRequest,
+    DriveDefaultPathRequest,
+    DriveDefaultPathResponse,
+    DriveFileItem,
+    DriveListResponse,
+    DriveStorageQuota,
+    DriveUploadProgress,
+    DriveUploadRequest,
+)
+from app.services.gdrive_service import gdrive_service
+
+router = APIRouter()
+
+
+# ── Auth ────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/auth/status",
+    response_model=DriveAuthStatusResponse,
+    summary="Check Auth Status",
+    description="Check whether the server holds a valid Google Drive OAuth token.",
+)
+def auth_status(redirect_uri: Optional[str] = Query(default=None)):
+    authenticated = gdrive_service.is_authenticated()
+    auth_url = None
+    if not authenticated:
+        try:
+            auth_url = gdrive_service.get_auth_url(redirect_uri=redirect_uri)
+        except Exception:
+            auth_url = None
+    return DriveAuthStatusResponse(authenticated=authenticated, auth_url=auth_url)
+
+
+@router.get(
+    "/auth/url",
+    summary="Get Auth URL",
+    description="Generate a Google OAuth authorization URL.",
+)
+def auth_url(redirect_uri: Optional[str] = Query(default=None)):
+    try:
+        url = gdrive_service.get_auth_url(redirect_uri=redirect_uri)
+        return {"auth_url": url}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate auth URL: {str(e)}",
+        )
+
+
+@router.post(
+    "/auth/callback",
+    summary="Exchange Auth Code",
+    description="Exchange an OAuth authorization code for access/refresh tokens.",
+)
+def auth_callback(payload: DriveAuthCodeRequest):
+    try:
+        success = gdrive_service.exchange_code(payload.code, redirect_uri=payload.redirect_uri)
+        if success:
+            return {"success": True, "message": "Google Drive authenticated successfully."}
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to exchange authorization code. Check the code and try again.",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Auth callback failed: {str(e)}",
+        )
+
+
+@router.post(
+    "/auth/logout",
+    summary="Logout",
+    description="Delete saved Google Drive OAuth token.",
+)
+def auth_logout():
+    try:
+        gdrive_service.logout()
+        return {"success": True, "message": "Logged out of Google Drive."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to logout: {str(e)}",
+        )
+
+
+# ── Files & Folders ────────────────────────────────────────────────────
+
+
+@router.get(
+    "/files",
+    response_model=DriveListResponse,
+    summary="List Files",
+    description="List files and folders in a Google Drive directory.",
+)
+def list_files(
+    folder_id: str = Query(default="root", description="Drive folder ID to list contents of."),
+    page_token: Optional[str] = Query(default=None, description="Pagination token for next page."),
+):
+    try:
+        result = gdrive_service.list_files(folder_id=folder_id, page_token=page_token)
+        return result
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list files: {str(e)}",
+        )
+
+
+@router.get(
+    "/files/{file_id}/path",
+    response_model=List[DriveBreadcrumb],
+    summary="Get Folder Path",
+    description="Build a breadcrumb path from a folder ID up to the root.",
+)
+def get_folder_path(file_id: str):
+    try:
+        path = gdrive_service.get_folder_path(file_id)
+        return path
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get folder path: {str(e)}",
+        )
+
+
+# ── Storage ─────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/storage",
+    response_model=DriveStorageQuota,
+    summary="Get Storage Quota",
+    description="Return Google Drive storage quota (limit, usage, in-drive, in-trash).",
+)
+def get_storage():
+    try:
+        return gdrive_service.get_storage_quota()
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get storage quota: {str(e)}",
+        )
+
+
+# ── Folders ──────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/folders",
+    summary="Create Folder",
+    description="Create a new folder in Google Drive.",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_folder(payload: DriveCreateFolderRequest):
+    try:
+        folder = gdrive_service.create_folder(name=payload.name, parent_id=payload.parent_id)
+        return {"success": True, "folder": folder}
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create folder: {str(e)}",
+        )
+
+
+# ── Uploads ──────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/upload",
+    summary="Start Upload",
+    description="Start a resumable upload of a local server file to Google Drive.",
+)
+def start_upload(payload: DriveUploadRequest):
+    try:
+        upload_id = gdrive_service.start_resumable_upload(
+            file_path=payload.file_path,
+            folder_id=payload.folder_id,
+        )
+        return {"success": True, "upload_id": upload_id, "message": "Upload started."}
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start upload: {str(e)}",
+        )
+
+
+@router.get(
+    "/upload/{upload_id}/progress",
+    response_model=DriveUploadProgress,
+    summary="Get Upload Progress",
+    description="Get the progress of a specific upload by its upload_id.",
+)
+def get_upload_progress(upload_id: str):
+    progress = gdrive_service.get_upload_progress(upload_id)
+    if not progress:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Upload with id '{upload_id}' not found.",
+        )
+    return progress
+
+
+@router.get(
+    "/uploads",
+    response_model=List[DriveUploadProgress],
+    summary="List All Uploads",
+    description="List all active and completed uploads with their progress.",
+)
+def list_uploads():
+    return gdrive_service.get_all_uploads()
+
+
+# ── Download ─────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/download/{file_id}",
+    summary="Get Download URL",
+    description="Get a download or export URL for a Google Drive file.",
+)
+def get_download_url(file_id: str):
+    try:
+        url = gdrive_service.download_file_url(file_id)
+        return {"file_id": file_id, "download_url": url}
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get download URL: {str(e)}",
+        )
+
+
+# ── Default Path ─────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/default-path",
+    response_model=DriveDefaultPathResponse,
+    summary="Get Default Upload Path",
+    description="Get the saved default Google Drive upload folder.",
+)
+def get_default_path():
+    result = gdrive_service.get_default_path()
+    return result
+
+
+@router.post(
+    "/default-path",
+    response_model=DriveDefaultPathResponse,
+    summary="Set Default Upload Path",
+    description="Save a default Google Drive upload folder.",
+)
+def set_default_path(payload: DriveDefaultPathRequest):
+    try:
+        gdrive_service.set_default_path(folder_id=payload.folder_id, folder_name=payload.folder_name)
+        return DriveDefaultPathResponse(
+            folder_id=payload.folder_id,
+            folder_name=payload.folder_name,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save default path: {str(e)}",
+        )

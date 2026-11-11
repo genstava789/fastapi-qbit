@@ -54,6 +54,11 @@ interface AppState {
   deleteConfirmHashes: string[] | null;
   setDeleteConfirmHash: (hash: string | null) => void;
   setDeleteConfirmHashes: (hashes: string[] | null) => void;
+
+  // Drive defaults
+  driveDefaultFolderId: string | null;
+  driveDefaultFolderName: string | null;
+  setDriveDefaultFolder: (id: string | null, name: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -127,6 +132,12 @@ export const useAppStore = create<AppState>()(
         set({ deleteConfirmHashes: hash ? [hash] : null }),
       setDeleteConfirmHashes: (hashes) =>
         set({ deleteConfirmHashes: hashes && hashes.length > 0 ? hashes : null }),
+
+      // Drive defaults
+      driveDefaultFolderId: null,
+      driveDefaultFolderName: null,
+      setDriveDefaultFolder: (id, name) =>
+        set({ driveDefaultFolderId: id, driveDefaultFolderName: name }),
     }),
     {
       name: "qbit-ui-storage",
@@ -134,6 +145,8 @@ export const useAppStore = create<AppState>()(
         instances: state.instances.length > 0 ? state.instances : DEFAULT_INSTANCES,
         activeInstanceId: state.activeInstanceId || "default-vps",
         sidebarOpen: state.sidebarOpen,
+        driveDefaultFolderId: state.driveDefaultFolderId,
+        driveDefaultFolderName: state.driveDefaultFolderName,
       }),
     }
   )
