@@ -193,13 +193,32 @@ export class DriveApi {
   }
 
   async startUpload(
-    filePath: string,
+    filePath?: string,
+    folderId?: string,
+    torrentHash?: string
+  ): Promise<{ upload_id: string }> {
+    const payload: { file_path?: string; folder_id?: string; torrent_hash?: string } = {};
+    if (filePath) payload.file_path = filePath;
+    if (folderId) payload.folder_id = folderId;
+    if (torrentHash) payload.torrent_hash = torrentHash;
+
+    const { data } = await this.client.post<{ upload_id: string }>("/drive/upload", payload);
+    return data;
+  }
+
+  async uploadFileDirect(
+    file: File,
     folderId?: string
   ): Promise<{ upload_id: string }> {
-    const { data } = await this.client.post<{ upload_id: string }>("/drive/upload", {
-      file_path: filePath,
-      folder_id: folderId,
-    });
+    const formData = new FormData();
+    formData.append("file", file);
+    if (folderId) formData.append("folder_id", folderId);
+
+    const { data } = await this.client.post<{ upload_id: string }>(
+      "/drive/upload-file",
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
     return data;
   }
 

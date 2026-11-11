@@ -1,6 +1,7 @@
+import os
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 
 from app.schemas.gdrive import (
     DriveAuthCodeRequest,
@@ -203,10 +204,16 @@ def create_folder(payload: DriveCreateFolderRequest):
     description="Start a resumable upload of a local server file to Google Drive.",
 )
 def start_upload(payload: DriveUploadRequest):
+    if not payload.file_path and not payload.torrent_hash:
+        raise HTTPException(
+            status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
+            detail="Either 'file_path' or 'torrent_hash' must be provided.",
+        )
     try:
         upload_id = gdrive_service.start_resumable_upload(
-            file_path=payload.file_path,
+            file_path=payload.file_path or "",
             folder_id=payload.folder_id,
+            torrent_hash=payload.torrent_hash,
         )
         return {"success": True, "upload_id": upload_id, "message": "Upload started."}
     except FileNotFoundError as e:
@@ -223,6 +230,50 @@ def start_upload(payload: DriveUploadRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start upload: {str(e)}",
+        )
+
+
+@router.post(
+    "/upload-file",
+    summary="Upload File Directly",
+    description="Upload a file directly from client machine to Google Drive.",
+)
+async def upload_file_direct(
+    file: UploadFile = File(...),
+    folder_id: str = Form(default="root"),
+):
+    import shutil
+    import tempfile
+
+    try:
+        suffix = os.path.splitext(file.filename or "")[1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp_path = tmp.name
+            shutil.copyfileobj(file.file, tmp)
+
+        # Start resumable upload on temp file
+        upload_id = gdrive_service.start_resumable_upload(
+            file_path=tmp_path,
+            folder_id=folder_id,
+        )
+        # Fix the filename in upload state
+        if upload_id in gdrive_service._uploads and file.filename:
+            gdrive_service._uploads[upload_id].filename = file.filename
+
+        return {
+            "success": True,
+            "upload_id": upload_id,
+            "message": f"Upload for '{file.filename}' started.",
+        }
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}",
         )
 
 

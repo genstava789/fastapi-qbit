@@ -19,6 +19,7 @@ export interface TorrentItem {
   upload_speed: number;
   eta: number;
   save_path: string;
+  content_path?: string;
 }
 
 export interface HealthStatus {

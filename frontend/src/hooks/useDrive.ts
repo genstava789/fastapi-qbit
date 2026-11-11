@@ -78,14 +78,22 @@ export function useUploadToDrive() {
   const qc = useQueryClient();
   const instance = useActiveInstance();
   return useMutation({
-    mutationFn: ({ filePath, folderId }: { filePath: string; folderId?: string }) =>
-      api!.startUpload(filePath, folderId),
+    mutationFn: ({
+      filePath,
+      folderId,
+      torrentHash,
+    }: {
+      filePath?: string;
+      folderId?: string;
+      torrentHash?: string;
+    }) => api!.startUpload(filePath, folderId, torrentHash),
     onSuccess: () => {
       toast.success("Upload to Drive started!");
       qc.invalidateQueries({ queryKey: ["drive-uploads", instance?.id] });
     },
-    onError: (err: Error) => {
-      toast.error(`Upload failed: ${err.message}`);
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Upload failed: ${msg}`);
     },
   });
 }

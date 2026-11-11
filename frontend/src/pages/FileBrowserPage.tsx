@@ -180,9 +180,11 @@ function FolderItem({
                     onOpenActionMenu({
                       type: "torrent",
                       title: t.name,
-                      savePath: t.save_path.endsWith("/")
-                        ? `${t.save_path}${t.name}`
-                        : `${t.save_path}/${t.name}`,
+                      savePath: t.content_path || (
+                        t.save_path.endsWith("/")
+                          ? `${t.save_path}${t.name}`
+                          : `${t.save_path}/${t.name}`
+                      ),
                       torrentHash: t.hash,
                     })
                   }
@@ -238,6 +240,7 @@ export function FileBrowserPage() {
   const { data: driveAuth } = useDriveAuthStatus();
   const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
   const [uploadDrivePath, setUploadDrivePath] = useState<string | null>(null);
+  const [uploadTorrentHash, setUploadTorrentHash] = useState<string | null>(null);
 
   const handleUploadToDrive = (target: ActionTarget) => {
     setActionTarget(null);
@@ -246,6 +249,7 @@ export function FileBrowserPage() {
       setDriveAuthModalOpen(true);
     } else {
       setUploadDrivePath(target.savePath);
+      setUploadTorrentHash(target.torrentHash || null);
     }
   };
 
@@ -424,8 +428,12 @@ export function FileBrowserPage() {
       {uploadDrivePath && (
         <UploadToDriveModal
           open={!!uploadDrivePath}
-          onClose={() => setUploadDrivePath(null)}
+          onClose={() => {
+            setUploadDrivePath(null);
+            setUploadTorrentHash(null);
+          }}
           filePath={uploadDrivePath}
+          torrentHash={uploadTorrentHash || undefined}
         />
       )}
     </div>

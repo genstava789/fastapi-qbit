@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from app.api import api_router_v1, proxy_router, tracker_router
+from app.api.v1.endpoints import gdrive_router
 from app.core.config import settings
 from app.services.qbit_service import qbit_service
 
@@ -56,6 +57,9 @@ app.include_router(tracker_router)
 
 # Mount API routes
 app.include_router(api_router_v1, prefix=settings.API_V1_STR)
+
+# Also mount drive router directly under /drive as convenience alias
+app.include_router(gdrive_router, prefix="/drive", tags=["Google Drive (Direct)"], include_in_schema=False)
 
 
 @app.get("/", response_class=HTMLResponse, tags=["Root"])

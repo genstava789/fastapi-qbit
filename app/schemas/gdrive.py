@@ -35,8 +35,9 @@ class DriveStorageQuota(BaseModel):
 
 
 class DriveUploadRequest(BaseModel):
-    file_path: str = Field(..., description="Absolute path to the file on the server filesystem.")
+    file_path: Optional[str] = Field(default=None, description="Absolute path to the file on the server filesystem.")
     folder_id: str = Field(default="root", description="Google Drive folder ID to upload into.")
+    torrent_hash: Optional[str] = Field(default=None, description="Optional torrent hash to auto-resolve content path from qBittorrent.")
 
 
 class DriveUploadProgress(BaseModel):

@@ -9,9 +9,10 @@ interface UploadToDriveModalProps {
   open: boolean;
   onClose: () => void;
   filePath: string;
+  torrentHash?: string;
 }
 
-export function UploadToDriveModal({ open, onClose, filePath }: UploadToDriveModalProps) {
+export function UploadToDriveModal({ open, onClose, filePath, torrentHash }: UploadToDriveModalProps) {
   const driveDefaultFolderId = useAppStore((s) => s.driveDefaultFolderId);
   const driveDefaultFolderName = useAppStore((s) => s.driveDefaultFolderName);
   const setDriveDefaultFolder = useAppStore((s) => s.setDriveDefaultFolder);
@@ -38,7 +39,7 @@ export function UploadToDriveModal({ open, onClose, filePath }: UploadToDriveMod
     }
 
     uploadMutation.mutate(
-      { filePath, folderId: targetFolderId },
+      { filePath, folderId: targetFolderId, torrentHash },
       {
         onSuccess: () => {
           onClose();

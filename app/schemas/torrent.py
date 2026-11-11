@@ -54,6 +54,7 @@ class TorrentItemResponse(BaseModel):
     upload_speed: int
     eta: int
     save_path: str
+    content_path: Optional[str] = None
 
 
 class TorrentActionResponse(BaseModel):

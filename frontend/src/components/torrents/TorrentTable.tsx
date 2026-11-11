@@ -313,6 +313,7 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
   const { data: driveAuth } = useDriveAuthStatus();
   const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
   const [uploadDrivePath, setUploadDrivePath] = useState<string | null>(null);
+  const [uploadTorrentHash, setUploadTorrentHash] = useState<string | null>(null);
 
   const handleUploadToDrive = (t: TorrentItem) => {
     if (!driveAuth?.authenticated) {
@@ -320,10 +321,13 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
       setDriveAuthModalOpen(true);
       return;
     }
-    const fullPath = t.save_path.endsWith("/")
-      ? `${t.save_path}${t.name}`
-      : `${t.save_path}/${t.name}`;
+    const fullPath = t.content_path || (
+      t.save_path.endsWith("/")
+        ? `${t.save_path}${t.name}`
+        : `${t.save_path}/${t.name}`
+    );
     setUploadDrivePath(fullPath);
+    setUploadTorrentHash(t.hash);
   };
 
   const filtered = useMemo(() => {
@@ -857,8 +861,12 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
       {uploadDrivePath && (
         <UploadToDriveModal
           open={!!uploadDrivePath}
-          onClose={() => setUploadDrivePath(null)}
+          onClose={() => {
+            setUploadDrivePath(null);
+            setUploadTorrentHash(null);
+          }}
           filePath={uploadDrivePath}
+          torrentHash={uploadTorrentHash || undefined}
         />
       )}
     </>

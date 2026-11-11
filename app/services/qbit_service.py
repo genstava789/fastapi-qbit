@@ -127,6 +127,7 @@ class QBitService:
                     "upload_speed": t.upspeed,
                     "eta": t.eta,
                     "save_path": t.save_path,
+                    "content_path": getattr(t, "content_path", None),
                 }
             )
         return items
@@ -150,6 +151,7 @@ class QBitService:
             "upload_speed": t.upspeed,
             "eta": t.eta,
             "save_path": t.save_path,
+            "content_path": getattr(t, "content_path", None),
         }
 
     def pause_torrent(self, torrent_hash: str) -> None:

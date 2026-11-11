@@ -41,6 +41,13 @@ class GDriveService:
     def __init__(self) -> None:
         self._uploads: Dict[str, UploadState] = {}
 
+    def _get_credentials_path(self) -> str:
+        if os.path.exists(CREDENTIALS_FILE):
+            return CREDENTIALS_FILE
+        if os.path.exists("credentials.example.json"):
+            return "credentials.example.json"
+        return CREDENTIALS_FILE
+
     def _get_redirect_uri(self, explicit_uri: Optional[str] = None) -> str:
         """Resolve redirect URI from param, env var, credentials.json, or fallback."""
         if explicit_uri:
@@ -49,8 +56,9 @@ class GDriveService:
         if env_uri:
             return env_uri
         try:
-            if os.path.exists(CREDENTIALS_FILE):
-                with open(CREDENTIALS_FILE, "r") as f:
+            creds_path = self._get_credentials_path()
+            if os.path.exists(creds_path):
+                with open(creds_path, "r") as f:
                     data = json.load(f)
                 client_info = data.get("web", data.get("installed", {}))
                 uris = client_info.get("redirect_uris", [])
@@ -65,7 +73,8 @@ class GDriveService:
 
     def _create_flow(self, redirect_uri: Optional[str] = None) -> Flow:
         """Create Flow instance compatible with both web and installed clients."""
-        flow = Flow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+        creds_path = self._get_credentials_path()
+        flow = Flow.from_client_secrets_file(creds_path, SCOPES)
         flow.redirect_uri = self._get_redirect_uri(redirect_uri)
         # Disable PKCE auto-generation to prevent Missing code verifier on stateless exchange
         flow.autogenerate_code_verifier = False
@@ -176,11 +185,43 @@ class GDriveService:
         )
         return folder
 
-    def _normalize_file_path(self, path: str) -> str:
-        """Resolve path inside container if host path was passed."""
-        if os.path.exists(path):
+    def _normalize_file_path(self, path: str, torrent_hash: Optional[str] = None) -> str:
+        """Resolve path inside container if host path was passed or auto-match torrent content."""
+        import glob
+        from app.core.config import settings
+
+        # 1. If torrent_hash is passed, query qBittorrent first
+        if torrent_hash:
+            try:
+                from app.services.qbit_service import qbit_service
+                connected, _ = qbit_service.check_connection()
+                if connected:
+                    torrent_info = qbit_service.get_torrent(torrent_hash)
+                    if torrent_info and torrent_info.get("content_path"):
+                        cpath = torrent_info["content_path"]
+                        if os.path.exists(cpath):
+                            return cpath
+                        cpath_norm = self._normalize_file_path(cpath)
+                        if os.path.exists(cpath_norm):
+                            return cpath_norm
+            except Exception as e:
+                logger.warning(f"Failed to lookup torrent by hash {torrent_hash}: {e}")
+
+        if path and os.path.exists(path):
             return path
+
+        if not path:
+            return ""
+
         basename = os.path.basename(path.rstrip("/\\"))
+        download_dirs = [
+            "/downloads",
+            getattr(settings, "DEFAULT_SAVE_PATH", "/downloads/").rstrip("/\\"),
+            "/home/boxd/Downloads",
+            "/home/boxd/fastapi-qbit/downloads",
+            "./downloads",
+        ]
+
         candidates = [
             os.path.join("/downloads", basename),
             path.replace("/home/boxd/Downloads", "/downloads"),
@@ -191,6 +232,46 @@ class GDriveService:
         for c in candidates:
             if os.path.exists(c):
                 return c
+
+        # 2. Check for filename with extension or prefix matching in download directories
+        for d in download_dirs:
+            if not os.path.exists(d) or not os.path.isdir(d):
+                continue
+            escaped = glob.escape(basename)
+            matches = glob.glob(os.path.join(d, f"{escaped}*"))
+            if matches and os.path.exists(matches[0]):
+                return matches[0]
+            try:
+                for entry in os.listdir(d):
+                    full = os.path.join(d, entry)
+                    if entry.lower() == basename.lower():
+                        return full
+                    if entry.lower().startswith(basename.lower()[:30]) or basename.lower().startswith(entry.lower()[:30]):
+                        return full
+            except OSError:
+                pass
+
+        # 3. Try finding torrent in qBittorrent matching basename or part of name
+        try:
+            from app.services.qbit_service import qbit_service
+            connected, _ = qbit_service.check_connection()
+            if connected:
+                torrents = qbit_service.list_torrents()
+                for t in torrents:
+                    t_name = t.get("name", "")
+                    t_hash = t.get("hash", "")
+                    if basename == t_hash or basename == t_name or basename in t_name or t_name in basename:
+                        cpath = t.get("content_path")
+                        if cpath and os.path.exists(cpath):
+                            return cpath
+                        if cpath:
+                            for d in download_dirs:
+                                c = os.path.join(d, os.path.basename(cpath))
+                                if os.path.exists(c):
+                                    return c
+        except Exception as e:
+            logger.warning(f"Failed to lookup torrent from qbittorrent: {e}")
+
         return path
 
     def _get_path_size(self, path: str) -> int:
@@ -208,12 +289,15 @@ class GDriveService:
         return total
 
     def start_resumable_upload(
-        self, file_path: str, folder_id: str = "root"
+        self, file_path: str = "", folder_id: str = "root", torrent_hash: Optional[str] = None
     ) -> str:
         """Start a resumable upload for a local file or directory. Returns upload_id."""
-        resolved_path = self._normalize_file_path(file_path)
+        resolved_path = self._normalize_file_path(file_path, torrent_hash=torrent_hash)
         if not os.path.exists(resolved_path):
-            raise FileNotFoundError(f"File or directory not found: {file_path}")
+            raise FileNotFoundError(
+                f"File or directory not found: '{file_path or torrent_hash}'. "
+                f"Make sure the file exists in the server download directory."
+            )
 
         upload_id = str(uuid.uuid4())
         filename = os.path.basename(resolved_path.rstrip("/\\")) or "upload"

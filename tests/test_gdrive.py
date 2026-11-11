@@ -73,3 +73,27 @@ async def test_gdrive_upload_nonexistent_file():
         # Should return 404 Not Found
         assert response.status_code == 404
 
+
+@pytest.mark.anyio
+async def test_gdrive_aliases():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Test fallback alias /api/v1/gdrive/uploads
+        res1 = await client.get("/api/v1/gdrive/uploads")
+        assert res1.status_code == 200
+
+        # Test direct root mount /drive/uploads
+        res2 = await client.get("/drive/uploads")
+        assert res2.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_gdrive_upload_missing_params():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/drive/upload",
+            json={"folder_id": "root"},
+        )
+        assert response.status_code == 422
+
