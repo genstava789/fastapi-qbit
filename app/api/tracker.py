@@ -52,7 +52,7 @@ async def tracker_announce(request: Request):
     PEERS[info_hash_hex].add((PUBLIC_SEEDER_IP, PUBLIC_SEEDER_PORT))
 
     is_internal = (
-        client_ip in ("127.0.0.1", "::1", "10.122.170.184", PUBLIC_SEEDER_IP)
+        client_ip in ("127.0.0.1", "::1", "10.122.170.184", PUBLIC_SEEDER_IP, "152.236.0.23")
         or client_ip.startswith("10.")
         or client_ip.startswith("172.")
         or client_ip.startswith("192.168.")

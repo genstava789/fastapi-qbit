@@ -54,4 +54,7 @@ htmlcov/
 node_modules/
 .wrangler/
 
+# Docker runtime volumes
+qbit-config/
+
 

@@ -9,14 +9,16 @@ services:
       - PGID=1000
       - TZ=Etc/UTC
       - WEBUI_PORT=8089
-      - TORRENTING_PORT=6881
+      - TORRENTING_PORT=51007
     volumes:
       - ./qbit-config:/config
       - ./downloads:/downloads
     ports:
       - "8089:8089"
-      - "6881:6881"
-      - "6881:6881/udp"
+      - "51007:51007"
+      - "51007:51007/udp"
+      - "6881:51007"
+      - "6881:51007/udp"
     restart: unless-stopped
 
   api:

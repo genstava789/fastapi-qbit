@@ -1,0 +1,15 @@
+.git
+downloads
+qbit-config
+venv
+.venv
+frontend
+node_modules
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+*.log
+.env
+
