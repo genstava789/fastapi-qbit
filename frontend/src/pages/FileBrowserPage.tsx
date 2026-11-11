@@ -7,7 +7,6 @@ import {
   ChevronRight,
   ChevronDown,
   Search,
-  Loader2,
   HardDrive,
   Copy,
   Trash2,
@@ -15,6 +14,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import { ListSkeleton, Skeleton } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import toast from "react-hot-toast";
 import type { TorrentItem } from "@/types";
@@ -271,21 +271,23 @@ export function FileBrowserPage() {
       </div>
 
       {/* Stats */}
-      {torrents && (
-        <div className="flex items-center gap-4 text-sm text-text-secondary">
-          <span className="flex items-center gap-1.5">
-            <HardDrive className="w-4 h-4" />
-            {formatBytes(torrents.reduce((s, t) => s + t.total_size, 0))} total
-          </span>
-          <span>{torrents.length} torrents</span>
-        </div>
+      {isLoading ? (
+        <Skeleton className="h-4 w-44" />
+      ) : (
+        torrents && (
+          <div className="flex items-center gap-4 text-sm text-text-secondary">
+            <span className="flex items-center gap-1.5">
+              <HardDrive className="w-4 h-4" />
+              {formatBytes(torrents.reduce((s, t) => s + t.total_size, 0))} total
+            </span>
+            <span>{torrents.length} torrents</span>
+          </div>
+        )
       )}
 
       {/* File Tree */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 text-accent animate-spin" />
-        </div>
+        <ListSkeleton rows={5} />
       ) : filteredTree ? (
         <div className="glass rounded-xl p-2">
           {filteredTree.children.length > 0 ||

@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
 import { useTorrents } from "@/hooks/useTorrents";
 import { formatBytes, getTorrentStateLabel } from "@/lib/utils";
-import { Badge } from "@/components/ui";
+import { Badge, ListSkeleton } from "@/components/ui";
 import { TorrentDetailModal } from "@/components/torrents";
-import { GitFork, Search, Loader2, Info } from "lucide-react";
+import { GitFork, Search, Info } from "lucide-react";
 import type { TorrentItem } from "@/types";
 
 function findCrossSeedCandidates(torrents: TorrentItem[]): {
@@ -80,9 +80,7 @@ export function CrossSeedPage() {
 
       {/* Results */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 text-accent animate-spin" />
-        </div>
+        <ListSkeleton rows={4} />
       ) : filtered.length > 0 ? (
         <div className="space-y-4">
           <p className="text-sm text-text-secondary">

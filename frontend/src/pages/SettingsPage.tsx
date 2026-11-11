@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAppStore } from "@/stores/appStore";
 import { useActiveInstance, useSystemStats, useHealth } from "@/hooks/useTorrents";
 import { formatBytes, formatUptime } from "@/lib/utils";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, SystemCardSkeleton } from "@/components/ui";
 import {
   Server,
   Plus,
@@ -88,9 +88,7 @@ function SystemResourcesCard() {
       </div>
 
       {isLoading ? (
-        <div className="py-6 text-center text-sm text-text-secondary">
-          Loading VPS host metrics...
-        </div>
+        <SystemCardSkeleton />
       ) : isError || !stats ? (
         <div className="flex items-start gap-3 p-3.5 rounded-xl bg-surface-elevated/80 border border-glass-border text-sm">
           <AlertCircle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />

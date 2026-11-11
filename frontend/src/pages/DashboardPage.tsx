@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useState } from "react";
 import { useTorrents, useHealth, useActiveInstance } from "@/hooks/useTorrents";
 import { formatBytes, formatSpeed } from "@/lib/utils";
+import { DashboardSkeleton } from "@/components/ui";
 import {
   Download,
   Upload,
@@ -74,7 +75,7 @@ function StatCard({
 }
 
 export function DashboardPage() {
-  const { data: torrents } = useTorrents();
+  const { data: torrents, isLoading } = useTorrents();
   const { data: health } = useHealth();
   const instance = useActiveInstance();
   const [speedHistory, setSpeedHistory] = useState<
@@ -152,6 +153,10 @@ export function DashboardPage() {
         </p>
       </div>
     );
+  }
+
+  if (isLoading && !torrents) {
+    return <DashboardSkeleton />;
   }
 
   return (

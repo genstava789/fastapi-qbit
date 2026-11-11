@@ -1,9 +1,8 @@
-import { lazy, Suspense } from "react";
+import { lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
 import { AppLayout } from "@/components/layout";
-import { Loader2 } from "lucide-react";
 
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
@@ -27,14 +26,6 @@ const SettingsPage = lazy(() =>
   import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
 );
 
-function PageLoader() {
-  return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <Loader2 className="w-8 h-8 text-accent animate-spin" />
-    </div>
-  );
-}
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -48,20 +39,18 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route element={<AppLayout />}>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/torrents" element={<TorrentsPage />} />
-              <Route path="/prowlarr" element={<ProwlarrPage />} />
-              <Route path="/crossseed" element={<CrossSeedPage />} />
-              <Route path="/network" element={<NetworkPage />} />
-              <Route path="/files" element={<FileBrowserPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </Suspense>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/torrents" element={<TorrentsPage />} />
+            <Route path="/prowlarr" element={<ProwlarrPage />} />
+            <Route path="/crossseed" element={<CrossSeedPage />} />
+            <Route path="/network" element={<NetworkPage />} />
+            <Route path="/files" element={<FileBrowserPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
       </BrowserRouter>
       <Toaster
         position="bottom-right"

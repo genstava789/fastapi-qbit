@@ -6,7 +6,7 @@ import {
 } from "@/hooks/useTorrents";
 import { useAppStore } from "@/stores/appStore";
 import { TorrentTable, TorrentToolbar } from "@/components/torrents";
-import { Button } from "@/components/ui";
+import { Button, Skeleton, TorrentsSkeleton } from "@/components/ui";
 import { formatBytes, formatSpeed, filterTorrents } from "@/lib/utils";
 import { useMemo } from "react";
 import {
@@ -14,7 +14,6 @@ import {
   Upload,
   HardDrive,
   Server,
-  Loader2,
   Play,
   Pause,
   Trash2,
@@ -68,25 +67,37 @@ export function TorrentsPage() {
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Torrents</h1>
-          <p className="text-sm text-text-secondary mt-0.5">
-            {torrents?.length || 0} total · {filtered.length} shown
-          </p>
+          {isLoading ? (
+            <Skeleton className="h-4 w-32 mt-1.5" />
+          ) : (
+            <p className="text-sm text-text-secondary mt-0.5">
+              {torrents?.length || 0} total · {filtered.length} shown
+            </p>
+          )}
         </div>
-        {stats && (
-          <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-sm font-mono">
-            <span className="flex items-center gap-1.5 text-accent font-semibold">
-              <Download className="w-4 h-4" />
-              {formatSpeed(stats.totalDl)}
-            </span>
-            <span className="flex items-center gap-1.5 text-success font-semibold">
-              <Upload className="w-4 h-4" />
-              {formatSpeed(stats.totalUl)}
-            </span>
-            <span className="flex items-center gap-1.5 text-text-secondary">
-              <HardDrive className="w-4 h-4" />
-              {formatBytes(stats.totalSize)}
-            </span>
+        {isLoading ? (
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-4 w-20" />
           </div>
+        ) : (
+          stats && (
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-sm font-mono">
+              <span className="flex items-center gap-1.5 text-accent font-semibold">
+                <Download className="w-4 h-4" />
+                {formatSpeed(stats.totalDl)}
+              </span>
+              <span className="flex items-center gap-1.5 text-success font-semibold">
+                <Upload className="w-4 h-4" />
+                {formatSpeed(stats.totalUl)}
+              </span>
+              <span className="flex items-center gap-1.5 text-text-secondary">
+                <HardDrive className="w-4 h-4" />
+                {formatBytes(stats.totalSize)}
+              </span>
+            </div>
+          )
         )}
       </div>
 
@@ -155,11 +166,9 @@ export function TorrentsPage() {
         </div>
       )}
 
-      {/* Torrent List / Table */}
+      {/* Torrent List / Table or Skeleton */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 text-accent animate-spin" />
-        </div>
+        <TorrentsSkeleton count={4} />
       ) : error ? (
         <div className="glass rounded-xl p-8 text-center">
           <p className="text-danger">Failed to load torrents</p>

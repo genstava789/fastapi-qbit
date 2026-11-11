@@ -1,4 +1,4 @@
-import { Modal, Button, ProgressBar, Badge } from "@/components/ui";
+import { Modal, Button, ProgressBar, Badge, TorrentDetailSkeleton } from "@/components/ui";
 import {
   useTorrentDetail,
   usePauseTorrent,
@@ -23,7 +23,6 @@ import {
   Upload,
   HardDrive,
   Clock,
-  Loader2,
 } from "lucide-react";
 
 interface TorrentDetailModalProps {
@@ -48,9 +47,7 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
   return (
     <Modal open={!!hash} onClose={onClose} title="Torrent Details" size="lg">
       {isLoading || !torrent ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 text-accent animate-spin" />
-        </div>
+        <TorrentDetailSkeleton />
       ) : (
         <div className="space-y-5">
           {/* Title & Status */}
