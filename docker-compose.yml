@@ -32,6 +32,8 @@ services:
       - QBIT_USERNAME=admin
       - QBIT_PASSWORD=adminadmin
       - DEFAULT_SAVE_PATH=/downloads/
+    volumes:
+      - ./downloads:/downloads:ro
     ports:
       - "8000:8000"
     depends_on:

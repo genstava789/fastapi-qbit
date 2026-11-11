@@ -69,3 +69,99 @@ async def test_webtorrent_redirect():
         assert response.status_code == 307
         assert response.headers["location"] == "/webtorrent/"
 
+
+@pytest.mark.anyio
+async def test_system_stats_endpoint():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/v1/system/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert "hostname" in data
+        assert "os_name" in data
+        assert "cpu_cores" in data and data["cpu_cores"] >= 1
+        assert "ram_total_bytes" in data and data["ram_total_bytes"] > 0
+        assert "disk_total_bytes" in data and data["disk_total_bytes"] > 0
+        assert "uptime_seconds" in data
+
+
+@pytest.mark.anyio
+async def test_system_paths_traversal_protection(tmp_path, monkeypatch):
+    from app.core.config import settings
+
+    sub = tmp_path / "complete"
+    sub.mkdir()
+    monkeypatch.setattr(settings, "DEFAULT_SAVE_PATH", str(tmp_path))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Allowed root browse
+        ok_resp = await client.get("/api/v1/system/paths")
+        assert ok_resp.status_code == 200
+        ok_data = ok_resp.json()
+        assert any(d["name"] == "complete" for d in ok_data["directories"])
+
+        # Traversal attempt outside DEFAULT_SAVE_PATH must be rejected
+        bad_resp = await client.get("/api/v1/system/paths", params={"path": str(tmp_path.parent)})
+        assert bad_resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_add_magnet_reseed_params(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    captured = {}
+
+    def fake_add_magnet(**kwargs):
+        captured.update(kwargs)
+        return "Ok."
+
+    monkeypatch.setattr(qbit_service, "add_magnet", fake_add_magnet)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/torrents/add-magnet",
+            json={
+                "magnet_url": "magnet:?xt=urn:btih:3b245504cf5f11bbdbe1201cea6a6bf45a004e6d",
+                "save_path": "/downloads/complete",
+                "skip_checking": True,
+                "auto_tmm": False,
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["success"] is True
+        assert captured["save_path"] == "/downloads/complete"
+        assert captured["skip_checking"] is True
+        assert captured["auto_tmm"] is False
+
+
+@pytest.mark.anyio
+async def test_add_file_reseed_params(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    captured = {}
+
+    def fake_add_torrent_file(**kwargs):
+        captured.update(kwargs)
+        return "Ok."
+
+    monkeypatch.setattr(qbit_service, "add_torrent_file", fake_add_torrent_file)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/torrents/add-file",
+            files={"file": ("ubuntu.torrent", b"d8:announce1:xe", "application/x-bittorrent")},
+            data={
+                "save_path": "/downloads/complete",
+                "skip_checking": "true",
+                "auto_tmm": "false",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["success"] is True
+        assert captured["save_path"] == "/downloads/complete"
+        assert captured["skip_checking"] is True
+        assert captured["auto_tmm"] is False
+

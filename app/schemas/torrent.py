@@ -24,6 +24,14 @@ class AddMagnetRequest(BaseModel):
         default=None,
         description="Optional list of tags.",
     )
+    skip_checking: bool = Field(
+        default=False,
+        description="Skip hash checking when seeding existing local files (re-seed mode).",
+    )
+    auto_tmm: Optional[bool] = Field(
+        default=None,
+        description="Control Automatic Torrent Management (set false for custom local re-seed save_path).",
+    )
 
     @field_validator("magnet_url")
     @classmethod
@@ -60,3 +68,32 @@ class HealthResponse(BaseModel):
     qbittorrent_connected: bool
     qbittorrent_version: Optional[str] = None
 
+
+class SystemStatsResponse(BaseModel):
+    hostname: str
+    os_name: str
+    architecture: str
+    active_user: str
+    cpu_percent: float
+    cpu_cores: int
+    ram_used_bytes: int
+    ram_total_bytes: int
+    ram_percent: float
+    disk_path: str
+    disk_free_bytes: int
+    disk_used_bytes: int
+    disk_total_bytes: int
+    disk_percent: float
+    uptime_seconds: int
+    public_ip: Optional[str] = None
+
+
+class ServerPathItem(BaseModel):
+    name: str
+    path: str
+
+
+class ServerPathsResponse(BaseModel):
+    current_path: str
+    parent_path: Optional[str] = None
+    directories: List[ServerPathItem]

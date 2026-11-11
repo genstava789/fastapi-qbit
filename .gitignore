@@ -8,14 +8,14 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+/build/
 develop-eggs/
-dist/
+/dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -49,4 +49,9 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Node / Wrangler
+node_modules/
+.wrangler/
+
 

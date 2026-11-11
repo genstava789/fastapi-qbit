@@ -25,6 +25,8 @@ def add_magnet(payload: AddMagnetRequest):
             category=payload.category,
             is_paused=payload.is_paused,
             tags=payload.tags,
+            skip_checking=payload.skip_checking,
+            auto_tmm=payload.auto_tmm,
         )
         if "Ok" in result or "ok" in result.lower():
             return TorrentActionResponse(
@@ -57,6 +59,8 @@ async def add_torrent_file(
     save_path: Optional[str] = Form(default=None, description="Custom save path on server"),
     category: Optional[str] = Form(default=None, description="Category name"),
     is_paused: bool = Form(default=False, description="Add torrent in paused state"),
+    skip_checking: bool = Form(default=False, description="Skip hash checking for existing local files"),
+    auto_tmm: Optional[bool] = Form(default=None, description="Automatic Torrent Management"),
 ):
     if not file.filename or not file.filename.endswith(".torrent"):
         raise HTTPException(
@@ -70,6 +74,8 @@ async def add_torrent_file(
             save_path=save_path,
             category=category,
             is_paused=is_paused,
+            skip_checking=skip_checking,
+            auto_tmm=auto_tmm,
         )
         if "Ok" in result or "ok" in result.lower():
             return TorrentActionResponse(

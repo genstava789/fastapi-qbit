@@ -47,18 +47,26 @@ class QBitService:
         category: Optional[str] = None,
         is_paused: bool = False,
         tags: Optional[List[str]] = None,
+        skip_checking: bool = False,
+        auto_tmm: Optional[bool] = None,
     ) -> str:
         """Adds a torrent via magnet link to qBittorrent."""
         client = self.get_client()
         target_path = save_path or settings.DEFAULT_SAVE_PATH
 
-        result = client.torrents_add(
-            urls=magnet_url,
-            save_path=target_path,
-            category=category,
-            is_paused=is_paused,
-            tags=",".join(tags) if tags else None,
-        )
+        kwargs: Dict[str, Any] = {
+            "urls": magnet_url,
+            "save_path": target_path,
+            "category": category,
+            "is_paused": is_paused,
+            "tags": ",".join(tags) if tags else None,
+        }
+        if skip_checking:
+            kwargs["is_skip_checking"] = True
+        if auto_tmm is not None:
+            kwargs["use_auto_torrent_management"] = auto_tmm
+
+        result = client.torrents_add(**kwargs)
         return str(result)
 
     def add_torrent_file(
@@ -68,18 +76,26 @@ class QBitService:
         category: Optional[str] = None,
         is_paused: bool = False,
         tags: Optional[List[str]] = None,
+        skip_checking: bool = False,
+        auto_tmm: Optional[bool] = None,
     ) -> str:
         """Adds a torrent from a .torrent file bytes to qBittorrent."""
         client = self.get_client()
         target_path = save_path or settings.DEFAULT_SAVE_PATH
 
-        result = client.torrents_add(
-            torrent_files=torrent_file_bytes,
-            save_path=target_path,
-            category=category,
-            is_paused=is_paused,
-            tags=",".join(tags) if tags else None,
-        )
+        kwargs: Dict[str, Any] = {
+            "torrent_files": torrent_file_bytes,
+            "save_path": target_path,
+            "category": category,
+            "is_paused": is_paused,
+            "tags": ",".join(tags) if tags else None,
+        }
+        if skip_checking:
+            kwargs["is_skip_checking"] = True
+        if auto_tmm is not None:
+            kwargs["use_auto_torrent_management"] = auto_tmm
+
+        result = client.torrents_add(**kwargs)
         return str(result)
 
     def list_torrents(
