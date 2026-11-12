@@ -59,6 +59,22 @@ export function useDriveStorageQuota(enabled: boolean = true) {
   });
 }
 
+export function useDriveEmptyTrash() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: () => api!.emptyTrash(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["drive-storage", instance?.id] });
+      toast.success("Google Drive trash emptied");
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Failed to empty Google Drive trash");
+    },
+  });
+}
+
 export function useDriveUploads() {
   const api = useDriveApi();
   const instance = useActiveInstance();

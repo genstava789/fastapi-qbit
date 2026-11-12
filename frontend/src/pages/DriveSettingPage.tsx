@@ -5,6 +5,7 @@ import {
   useDriveAuthStatus,
   useDriveStorageQuota,
   useDriveDefaultPath,
+  useDriveEmptyTrash,
 } from "@/hooks/useDrive";
 import { useQueryClient } from "@tanstack/react-query";
 import { useActiveInstance } from "@/hooks/useTorrents";
@@ -20,9 +21,6 @@ import {
   User,
   Trash2,
   FolderSync,
-  ExternalLink,
-  ShieldCheck,
-  RefreshCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -49,6 +47,7 @@ export function DriveSettingPage() {
   } = useDriveStorageQuota(isAuthenticated);
 
   const { mutation: defaultPathMutation } = useDriveDefaultPath();
+  const emptyTrashMutation = useDriveEmptyTrash();
 
   const storagePercent = quota && quota.limit > 0
     ? Math.min(100, Math.max(0, (quota.usage / quota.limit) * 100))
@@ -91,51 +90,36 @@ export function DriveSettingPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto pb-10">
+    <div className="space-y-6 max-w-3xl mx-auto">
       {/* Top Navigation & Title */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/drive")}
-            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors"
-            title="Back to Google Drive files"
-            aria-label="Back to Google Drive"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold text-text-primary">
-                Google Drive Settings
-              </h1>
-              {isAuthenticated ? (
-                <Badge variant="success" className="gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                  Connected
-                </Badge>
-              ) : (
-                <Badge variant="danger">Disconnected</Badge>
-              )}
-            </div>
-            <p className="text-xs sm:text-sm text-text-secondary mt-0.5">
-              Storage quota, default upload folder, and account management
-            </p>
-          </div>
-        </div>
-
+      <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => {
-            refetchQuota();
-            qc.invalidateQueries({ queryKey: ["drive-default-path", instance?.id] });
-            toast.success("Settings refreshed");
-          }}
-          className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border text-text-secondary hover:text-text-primary hover:bg-glass-hover text-xs font-medium transition-colors"
-          title="Refresh Drive settings"
+          onClick={() => navigate("/drive")}
+          className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors flex-shrink-0"
+          title="Back to Google Drive files"
+          aria-label="Back to Google Drive"
         >
-          <RefreshCw className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <h1 className="text-xl sm:text-2xl font-bold text-text-primary truncate">
+              Google Drive Settings
+            </h1>
+            {isAuthenticated ? (
+              <Badge variant="success" className="gap-1 flex-shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                Connected
+              </Badge>
+            ) : (
+              <Badge variant="danger" className="flex-shrink-0">Disconnected</Badge>
+            )}
+          </div>
+          <p className="text-xs sm:text-sm text-text-secondary mt-0.5 truncate">
+            Storage quota, default upload folder, and account management
+          </p>
+        </div>
       </div>
 
       {/* 1. Google Drive Storage Quota Card */}
@@ -183,9 +167,9 @@ export function DriveSettingPage() {
           <p className="text-xs text-text-muted">Storage information unavailable</p>
         )}
 
-        {/* Breakdown Badges */}
+        {/* Breakdown Badges: 2-column grid without redundant Remaining box */}
         {quota && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-glass-border/50 text-xs">
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-glass-border/50 text-xs">
             <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border">
               <span className="text-text-muted flex items-center gap-1.5">
                 <FolderOpen className="w-3.5 h-3.5 text-accent" /> In Drive
@@ -194,20 +178,29 @@ export function DriveSettingPage() {
                 {formatBytes(quota.usageInDrive)}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border">
-              <span className="text-text-muted flex items-center gap-1.5">
-                <Trash2 className="w-3.5 h-3.5 text-danger" /> Trash
-              </span>
+            <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-text-muted flex items-center gap-1.5">
+                  <Trash2 className="w-3.5 h-3.5 text-danger" /> Trash
+                </span>
+                {quota.usageInTrash > 0 && (
+                  <button
+                    type="button"
+                    disabled={emptyTrashMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm("Kosongkan semua file sampah di Google Drive secara permanen?")) {
+                        emptyTrashMutation.mutate();
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 text-[11px] font-medium transition-colors disabled:opacity-50"
+                    title="Kosongkan sampah Google Drive"
+                  >
+                    {emptyTrashMutation.isPending ? "Clearing..." : "Empty"}
+                  </button>
+                )}
+              </div>
               <p className="font-mono font-semibold text-text-primary mt-1">
                 {formatBytes(quota.usageInTrash)}
-              </p>
-            </div>
-            <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border col-span-2 sm:col-span-1">
-              <span className="text-text-muted flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-success" /> Remaining
-              </span>
-              <p className="font-mono font-semibold text-text-primary mt-1">
-                {quota.limit > 0 ? formatBytes(freeStorage) : "Unlimited"}
               </p>
             </div>
           </div>
@@ -324,19 +317,6 @@ export function DriveSettingPage() {
               Disconnect
             </button>
           </div>
-        </div>
-
-        <div className="pt-2 text-xs text-text-muted flex items-center justify-between">
-          <span>Manage your files directly in the official client:</span>
-          <a
-            href="https://drive.google.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-accent hover:underline font-medium"
-          >
-            Open drive.google.com
-            <ExternalLink className="w-3 h-3" />
-          </a>
         </div>
       </div>
 

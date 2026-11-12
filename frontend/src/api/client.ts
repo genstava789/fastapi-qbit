@@ -188,6 +188,13 @@ export class DriveApi {
     return data;
   }
 
+  async emptyTrash(): Promise<{ success: boolean; message: string }> {
+    const { data } = await this.client.delete<{ success: boolean; message: string }>(
+      "/drive/trash"
+    );
+    return data;
+  }
+
   async createFolder(
     name: string,
     parentId?: string

@@ -235,6 +235,27 @@ def get_storage():
         )
 
 
+@router.delete(
+    "/trash",
+    summary="Empty Trash",
+    description="Permanently delete all files in Google Drive trash.",
+)
+def empty_trash():
+    try:
+        gdrive_service.empty_trash()
+        return {"success": True, "message": "Google Drive trash emptied successfully."}
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to empty trash: {str(e)}",
+        )
+
+
 # ── Folders ──────────────────────────────────────────────────────────────
 
 

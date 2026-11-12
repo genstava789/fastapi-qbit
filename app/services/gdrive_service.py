@@ -182,6 +182,12 @@ class GDriveService:
         service.files().delete(fileId=file_id).execute()
         return True
 
+    def empty_trash(self) -> bool:
+        """Permanently empty all trashed files from Google Drive."""
+        service = self._build_service()
+        service.files().emptyTrash().execute()
+        return True
+
     def rename_file(self, file_id: str, new_name: str) -> Dict[str, Any]:
         """Rename a file or folder in Google Drive."""
         service = self._build_service()

@@ -36,11 +36,13 @@ export function Header() {
       if (isDriveRoute) {
         await Promise.all([
           qc.invalidateQueries({ queryKey: ["drive-files"] }),
+          qc.invalidateQueries({ queryKey: ["drive-storage"] }),
           qc.invalidateQueries({ queryKey: ["drive-storage-quota"] }),
           qc.invalidateQueries({ queryKey: ["drive-breadcrumbs"] }),
           qc.invalidateQueries({ queryKey: ["drive-uploads"] }),
+          qc.invalidateQueries({ queryKey: ["drive-default-path"] }),
           qc.refetchQueries({ queryKey: ["drive-files"], type: "active" }),
-          qc.refetchQueries({ queryKey: ["drive-storage-quota"], type: "active" }),
+          qc.refetchQueries({ queryKey: ["drive-storage"], type: "active" }),
         ]);
       } else if (isFilesRoute) {
         await qc.invalidateQueries({ queryKey: ["fs-files"] });
