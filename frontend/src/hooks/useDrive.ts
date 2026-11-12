@@ -59,7 +59,7 @@ export function useDriveFileMeta(fileId?: string) {
       const resp = await fetch(
         `https://mild-leaf.nyc.boxd.sh/api/v1/drive/files/${encodeURIComponent(fileId!)}/meta`
       );
-      if (!resp.ok) throw new Error("Gagal memuat metadata file");
+      if (!resp.ok) throw new Error("Failed to load file metadata");
       return resp.json();
     },
     enabled: !!fileId,
@@ -158,7 +158,7 @@ export function useBatchUploadToDrive() {
       items: Array<{ filePath?: string; torrentHash?: string; name: string }>;
       folderId?: string;
     }) => {
-      if (!api) throw new Error("Google Drive API tidak tersedia");
+      if (!api) throw new Error("Google Drive API is unavailable");
       const results: Array<{
         item: { filePath?: string; torrentHash?: string; name: string };
         upload_id?: string;
@@ -169,7 +169,7 @@ export function useBatchUploadToDrive() {
           const res = await api.startUpload(item.filePath, folderId, item.torrentHash);
           results.push({ item, upload_id: res.upload_id });
         } catch (err: any) {
-          const msg = err.response?.data?.detail || err.message || "Gagal mengunggah";
+          const msg = err.response?.data?.detail || err.message || "Failed to upload";
           results.push({ item, error: msg });
         }
       }
@@ -180,11 +180,11 @@ export function useBatchUploadToDrive() {
       const successes = results.filter((r) => !r.error);
       const failures = results.filter((r) => r.error);
       if (failures.length === 0) {
-        toast.success(`Berhasil memulai upload ${successes.length} torrent ke Google Drive!`);
+        toast.success(`Started uploading ${successes.length} torrent(s) to Google Drive!`);
       } else if (successes.length > 0) {
-        toast.success(`Memulai upload ${successes.length} torrent (${failures.length} gagal)`);
+        toast.success(`Started uploading ${successes.length} torrent(s) (${failures.length} failed)`);
       } else {
-        toast.error(`Gagal memulai batch upload: ${failures[0]?.error || "Unknown error"}`);
+        toast.error(`Failed to start batch upload: ${failures[0]?.error || "Unknown error"}`);
       }
     },
     onError: (err: any) => {

@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { TorrentActionResponse, TorrentFilter, TorrentItem } from "@/types";
+import { UI_LOCALE } from "@/lib/strings";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -244,7 +245,7 @@ export function formatCompactDate(dateStr: string | null | undefined): string {
     const now = new Date();
     const isCurrentYear = d.getFullYear() === now.getFullYear();
 
-    const dayMonth = d.toLocaleDateString("id-ID", {
+    const dayMonth = d.toLocaleDateString(UI_LOCALE, {
       day: "numeric",
       month: "short",
     });

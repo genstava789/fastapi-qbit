@@ -12,7 +12,8 @@ import {
 } from "@/hooks/useDrive";
 import { useQueryClient } from "@tanstack/react-query";
 import { useActiveInstance } from "@/hooks/useTorrents";
-import { formatBytes, cn } from "@/lib/utils";
+import { formatBytes, formatCompactDate, cn } from "@/lib/utils";
+import { UI_STRINGS } from "@/lib/strings";
 import { ListSkeleton, Skeleton } from "@/components/ui";
 import { DriveAuthModal, UploadToDriveModal } from "@/components/drive";
 import {
@@ -49,6 +50,8 @@ import {
 import toast from "react-hot-toast";
 import type { DriveFileItem } from "@/types";
 
+const S = UI_STRINGS.drive;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -77,29 +80,6 @@ function getFileIcon(mimeType: string, compact = false) {
     return <FileText className={cn(size, "text-blue-400 flex-shrink-0")} />;
   }
   return <File className={cn(size, "text-accent flex-shrink-0")} />;
-}
-
-// Compact date formatting (e.g. "12 Nov" for current year, "12 Nov '25" for prior years)
-function formatCompactDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "";
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return "";
-    const now = new Date();
-    const isCurrentYear = d.getFullYear() === now.getFullYear();
-
-    const dayMonth = d.toLocaleDateString("id-ID", {
-      day: "numeric",
-      month: "short",
-    });
-
-    if (isCurrentYear) {
-      return dayMonth;
-    }
-    return `${dayMonth} '${String(d.getFullYear()).slice(-2)}`;
-  } catch {
-    return "";
-  }
 }
 
 type SortField = "name" | "size" | "date";
@@ -172,19 +152,19 @@ export function DrivePage() {
     const code = searchParams.get("code");
     if (code && api) {
       const redirectUri = `${window.location.origin}/drive`;
-      toast.loading("Menghubungkan akun Google Drive...", { id: "gdrive-oauth" });
+      toast.loading(S.oauthConnecting, { id: "gdrive-oauth" });
       api
         .exchangeAuthCode(code, redirectUri)
         .then((res) => {
           if (res.success) {
-            toast.success("Google Drive berhasil terhubung!", { id: "gdrive-oauth" });
+            toast.success(S.oauthConnected, { id: "gdrive-oauth" });
             qc.invalidateQueries({ queryKey: ["drive-auth-status", instance?.id] });
           } else {
-            toast.error(res.message || "Gagal menghubungkan Google Drive", { id: "gdrive-oauth" });
+            toast.error(res.message || S.oauthFailed, { id: "gdrive-oauth" });
           }
         })
         .catch((err) => {
-          toast.error(err instanceof Error ? err.message : "Otorisasi gagal", { id: "gdrive-oauth" });
+          toast.error(err instanceof Error ? err.message : S.authFailed, { id: "gdrive-oauth" });
         })
         .finally(() => {
           navigate("/drive", { replace: true });
@@ -245,7 +225,6 @@ export function DrivePage() {
         onSuccess: () => {
           setNewFolderName("");
           setShowNewFolderModal(false);
-          toast.success(`Folder "${newFolderName.trim()}" dibuat`);
         },
       }
     );
@@ -274,7 +253,6 @@ export function DrivePage() {
         onSuccess: () => {
           setItemToRename(null);
           setRenameValue("");
-          toast.success("Nama file berhasil diubah");
         },
       }
     );
@@ -295,7 +273,6 @@ export function DrivePage() {
           next.delete(itemToDelete.id);
           return next;
         });
-        toast.success("File berhasil dihapus");
       },
     });
   };
@@ -308,7 +285,6 @@ export function DrivePage() {
         setSelectedIds(new Set());
         setBatchDeleteConfirmOpen(false);
         setIsSelectMode(false);
-        toast.success(`${ids.length} item berhasil dihapus`);
       },
     });
   };
@@ -405,10 +381,10 @@ export function DrivePage() {
           </div>
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-text-primary">
-              Google Drive
+              {S.connectTitle}
             </h1>
             <p className="text-text-secondary text-sm max-w-md mx-auto leading-relaxed">
-              Hubungkan akun Google Drive untuk mengunggah torrent yang selesai langsung dari server ke cloud tanpa menggunakan kuota lokal, serta menjelajahi file cloud Anda.
+              {S.connectSubtitle}
             </p>
           </div>
           <button
@@ -417,7 +393,7 @@ export function DrivePage() {
             className="inline-flex items-center justify-center gap-2 px-6 min-h-[44px] rounded-xl bg-accent hover:bg-accent-hover text-white font-medium text-sm shadow-lg shadow-accent/25 transition-all"
           >
             <HardDrive className="w-5 h-5" />
-            Hubungkan Google Drive
+            {S.connectButton}
           </button>
         </div>
         <DriveAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
@@ -438,7 +414,7 @@ export function DrivePage() {
             <HardDrive className="w-4 h-4" />
           </div>
           <h1 className="text-lg sm:text-xl font-bold text-text-primary truncate">
-            Google Drive
+            {S.title}
           </h1>
         </div>
 
@@ -449,11 +425,11 @@ export function DrivePage() {
             type="button"
             onClick={() => setShowNewFolderModal(true)}
             className="min-h-[36px] px-2.5 sm:px-3 flex items-center justify-center gap-1.5 rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-primary text-xs sm:text-sm font-medium transition-colors"
-            title="Buat folder baru"
-            aria-label="Buat folder baru"
+            title={S.newFolderTitle}
+            aria-label={S.newFolderTitle}
           >
             <FolderPlus className="w-4 h-4 text-amber-400 flex-shrink-0" />
-            <span className="hidden sm:inline">Folder Baru</span>
+            <span className="hidden sm:inline">{S.newFolder}</span>
           </button>
 
           {/* Upload server file */}
@@ -461,10 +437,10 @@ export function DrivePage() {
             type="button"
             onClick={() => setUploadModalOpen(true)}
             className="min-h-[36px] px-2.5 sm:px-3 flex items-center justify-center gap-1.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs sm:text-sm font-medium transition-colors shadow-sm shadow-accent/20"
-            title="Upload file dari server ke Drive"
+            title={S.uploadTitle}
           >
             <UploadCloud className="w-4 h-4 flex-shrink-0" />
-            <span className="hidden sm:inline">Upload</span>
+            <span className="hidden sm:inline">{S.upload}</span>
           </button>
 
           {/* Refresh button */}
@@ -473,8 +449,8 @@ export function DrivePage() {
             onClick={() => refetchFiles()}
             disabled={filesFetching}
             className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors disabled:opacity-50"
-            title="Segarkan daftar file"
-            aria-label="Segarkan"
+            title={S.refreshTitle}
+            aria-label={S.refreshAria}
           >
             <RefreshCw className={cn("w-3.5 h-3.5", filesFetching && "animate-spin")} />
           </button>
@@ -484,8 +460,8 @@ export function DrivePage() {
             type="button"
             onClick={() => navigate("/drive-setting")}
             className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors"
-            title="Pengaturan Drive & Penyimpanan"
-            aria-label="Pengaturan Drive"
+            title={S.settingsTitle}
+            aria-label={S.settingsAria}
           >
             <Settings className="w-4 h-4" />
           </button>
@@ -502,10 +478,10 @@ export function DrivePage() {
               type="button"
               onClick={handleGoUp}
               className="flex items-center gap-1 min-h-[30px] px-2 rounded-lg bg-surface-elevated border border-glass-border text-text-secondary hover:text-text-primary hover:bg-glass-hover transition-colors flex-shrink-0 text-xs font-medium"
-              title="Ke folder sebelumnya"
+              title={S.upTitle}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">Naik</span>
+              <span className="hidden xs:inline">{S.upLabel}</span>
             </button>
           )}
 
@@ -525,7 +501,7 @@ export function DrivePage() {
               )}
             >
               <Home className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>My Drive</span>
+              <span>{S.myDrive}</span>
             </button>
 
             {breadcrumb?.map((crumb) => {
@@ -559,7 +535,7 @@ export function DrivePage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
             <input
               type="text"
-              placeholder="Cari file atau folder di Drive..."
+              placeholder={S.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full h-9 pl-9 pr-8 rounded-xl text-xs sm:text-sm bg-surface-elevated border border-glass-border text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all"
@@ -569,7 +545,7 @@ export function DrivePage() {
                 type="button"
                 onClick={() => setSearchQuery("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary rounded-lg transition-colors"
-                aria-label="Hapus pencarian"
+                aria-label={S.clearSearchAria}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -589,8 +565,8 @@ export function DrivePage() {
                 />
                 <span>
                   {selectedIds.size > 0
-                    ? `${selectedIds.size} dipilih`
-                    : `Semua (${filteredItems.all.length})`}
+                    ? `${selectedIds.size} ${S.selectedSuffix}`
+                    : `${S.allPrefix} (${filteredItems.all.length})`}
                 </span>
               </label>
 
@@ -602,7 +578,7 @@ export function DrivePage() {
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-danger text-white text-[11px] font-medium shadow-sm hover:bg-danger/90 transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
-                    <span>Hapus ({selectedIds.size})</span>
+                    <span>{S.deleteSelected} ({selectedIds.size})</span>
                   </button>
                 )}
                 <button
@@ -610,7 +586,7 @@ export function DrivePage() {
                   onClick={exitSelectMode}
                   className="px-2.5 py-1 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover text-[11px] font-medium text-text-primary transition-colors"
                 >
-                  Selesai
+                  {S.done}
                 </button>
               </div>
             </div>
@@ -623,13 +599,13 @@ export function DrivePage() {
                   type="button"
                   onClick={() => setIsSelectMode(true)}
                   className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium"
-                  title="Pilih beberapa file"
+                  title={S.selectTitle}
                 >
                   <CheckSquare className="w-3.5 h-3.5 text-accent" />
-                  <span>Pilih</span>
+                  <span>{S.select}</span>
                 </button>
                 <span className="text-[11px] text-text-muted">
-                  {filteredItems.all.length} item
+                  {filteredItems.all.length} {S.itemsSuffix}
                 </span>
               </div>
 
@@ -641,12 +617,10 @@ export function DrivePage() {
                     type="button"
                     onClick={() => setShowSortMenu(!showSortMenu)}
                     className="flex items-center gap-1 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium"
-                    title="Urutkan file"
+                    title={S.sortTitle}
                   >
                     <ArrowUpDown className="w-3 h-3 text-text-muted" />
-                    <span>
-                      {sortField === "name" ? "Nama" : sortField === "size" ? "Ukuran" : "Tanggal"}
-                    </span>
+                    <span>{S.sortFields[sortField]}</span>
                     <span className="text-[10px] text-accent font-bold">
                       {sortDir === "asc" ? "↑" : "↓"}
                     </span>
@@ -658,9 +632,9 @@ export function DrivePage() {
                       <div className="absolute right-0 top-9 z-50 min-w-[150px] bg-surface-overlay border border-glass-border rounded-xl shadow-2xl py-1 text-xs">
                         {(
                           [
-                            ["name", "Nama"],
-                            ["size", "Ukuran"],
-                            ["date", "Tanggal"],
+                            ["name", S.sortFields.name],
+                            ["size", S.sortFields.size],
+                            ["date", S.sortFields.date],
                           ] as [SortField, string][]
                         ).map(([f, label]) => (
                           <button
@@ -675,7 +649,7 @@ export function DrivePage() {
                             <span>{label}</span>
                             {sortField === f && (
                               <span className="text-[10px] text-accent font-bold">
-                                {sortDir === "asc" ? "A-Z / Min" : "Z-A / Max"}
+                                {sortDir === "asc" ? S.sortAsc : S.sortDesc}
                               </span>
                             )}
                           </button>
@@ -696,8 +670,8 @@ export function DrivePage() {
                         ? "bg-accent/15 text-accent shadow-sm"
                         : "text-text-muted hover:text-text-primary"
                     )}
-                    title="Tampilan Daftar (List)"
-                    aria-label="Tampilan Daftar"
+                    title={S.listViewTitle}
+                    aria-label={S.listViewAria}
                   >
                     <LayoutList className="w-3.5 h-3.5" />
                   </button>
@@ -710,8 +684,8 @@ export function DrivePage() {
                         ? "bg-accent/15 text-accent shadow-sm"
                         : "text-text-muted hover:text-text-primary"
                     )}
-                    title="Tampilan Kotak (Grid)"
-                    aria-label="Tampilan Kotak"
+                    title={S.gridViewTitle}
+                    aria-label={S.gridViewAria}
                   >
                     <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
@@ -733,12 +707,12 @@ export function DrivePage() {
           </div>
           <div className="space-y-1">
             <h3 className="text-sm sm:text-base font-semibold text-text-primary">
-              Gagal Memuat File
+              {S.loadErrorTitle}
             </h3>
             <p className="text-xs text-text-secondary max-w-sm mx-auto">
               {(filesErrorObj as any)?.response?.data?.detail ||
                 (filesErrorObj as any)?.message ||
-                "Terjadi kendala saat mengambil file dari Google Drive."}
+                S.loadErrorFallback}
             </p>
           </div>
           <div className="flex items-center justify-center gap-2 pt-1">
@@ -748,7 +722,7 @@ export function DrivePage() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Coba Lagi</span>
+              <span>{S.retry}</span>
             </button>
             <button
               type="button"
@@ -756,7 +730,7 @@ export function DrivePage() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-elevated border border-glass-border text-text-secondary hover:text-text-primary text-xs font-medium transition-colors"
             >
               <Settings className="w-3.5 h-3.5" />
-              <span>Pengaturan Drive</span>
+              <span>{S.driveSettings}</span>
             </button>
           </div>
         </div>
@@ -766,7 +740,7 @@ export function DrivePage() {
             <div className="glass rounded-2xl border border-glass-border py-14 text-center space-y-3">
               <FolderOpen className="w-10 h-10 mx-auto text-text-muted opacity-30" />
               <p className="text-text-secondary text-sm">
-                {searchQuery ? "Tidak ada file atau folder yang cocok" : "Folder ini kosong"}
+                {searchQuery ? S.emptySearch : S.emptyFolder}
               </p>
               {!searchQuery && (
                 <button
@@ -775,7 +749,7 @@ export function DrivePage() {
                   className="inline-flex items-center gap-1.5 text-xs text-accent hover:underline font-medium"
                 >
                   <FolderPlus className="w-4 h-4" />
-                  Buat folder baru
+                  {S.createNewFolderLink}
                 </button>
               )}
             </div>
@@ -840,8 +814,8 @@ export function DrivePage() {
                         setActionSheetItem(folder);
                       }}
                       className="min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors flex-shrink-0"
-                      title="Opsi folder"
-                      aria-label="Opsi folder"
+                      title={S.folderOptionsAria}
+                      aria-label={S.folderOptionsAria}
                     >
                       <MoreVertical className="w-4 h-4" />
                     </button>
@@ -910,7 +884,7 @@ export function DrivePage() {
                           handlePreview(file);
                         }}
                         className="hidden sm:flex min-w-[32px] min-h-[32px] items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors opacity-0 group-hover:opacity-100"
-                        title="Buka di Google Drive"
+                        title={S.openInDriveTitle}
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </button>
@@ -921,7 +895,7 @@ export function DrivePage() {
                           handleDownload(file);
                         }}
                         className="hidden sm:flex min-w-[32px] min-h-[32px] items-center justify-center rounded-lg text-accent hover:bg-accent/15 transition-colors opacity-0 group-hover:opacity-100"
-                        title="Unduh file"
+                        title={S.downloadFileTitle}
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>
@@ -932,8 +906,8 @@ export function DrivePage() {
                           setActionSheetItem(file);
                         }}
                         className="min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors flex-shrink-0"
-                        title="Opsi lainnya"
-                        aria-label="Opsi lainnya"
+                        title={S.moreOptionsAria}
+                        aria-label={S.moreOptionsAria}
                       >
                         <MoreVertical className="w-4 h-4" />
                       </button>
@@ -1120,7 +1094,7 @@ export function DrivePage() {
                 className="flex items-center gap-3 w-full px-4 min-h-[44px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover transition-colors"
               >
                 <Download className="w-5 h-5 text-accent" />
-                <span>Unduh File</span>
+                <span>{S.downloadFile}</span>
               </button>
             )}
 
@@ -1135,7 +1109,7 @@ export function DrivePage() {
               className="flex items-center gap-3 w-full px-4 min-h-[44px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover transition-colors"
             >
               <ExternalLink className="w-5 h-5 text-text-secondary" />
-              <span>Buka di Google Drive</span>
+              <span>{S.openInDrive}</span>
             </button>
 
             {/* Rename */}
@@ -1145,7 +1119,7 @@ export function DrivePage() {
               className="flex items-center gap-3 w-full px-4 min-h-[44px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover transition-colors"
             >
               <Edit2 className="w-5 h-5 text-amber-400" />
-              <span>Ganti Nama</span>
+              <span>{S.rename}</span>
             </button>
 
             {/* Select / Deselect & Enter Select Mode */}
@@ -1161,8 +1135,8 @@ export function DrivePage() {
               <Check className="w-5 h-5 text-accent" />
               <span>
                 {selectedIds.has(actionSheetItem.id)
-                  ? "Batalkan Pilihan"
-                  : "Pilih Item Ini"}
+                  ? S.deselectItem
+                  : S.selectItem}
               </span>
             </button>
 
@@ -1175,7 +1149,10 @@ export function DrivePage() {
               >
                 <Trash2 className="w-5 h-5" />
                 <span>
-                  Hapus {actionSheetItem.mimeType === "application/vnd.google-apps.folder" ? "Folder" : "File"}
+                  {S.deleteItem}{" "}
+                  {actionSheetItem.mimeType === "application/vnd.google-apps.folder"
+                    ? S.folderLabel
+                    : S.fileLabel}
                 </span>
               </button>
             </div>
@@ -1193,7 +1170,10 @@ export function DrivePage() {
           <div className="relative w-full max-w-sm glass bg-surface-overlay border border-glass-border rounded-2xl p-5 space-y-4 shadow-2xl z-10">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-text-primary">
-                Ganti Nama {itemToRename.mimeType === "application/vnd.google-apps.folder" ? "Folder" : "File"}
+                {S.renameTitlePrefix}{" "}
+                {itemToRename.mimeType === "application/vnd.google-apps.folder"
+                  ? S.folderLabel
+                  : S.fileLabel}
               </h3>
               <button
                 type="button"
@@ -1217,7 +1197,7 @@ export function DrivePage() {
                 onClick={() => setItemToRename(null)}
                 className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover"
               >
-                Batal
+                {S.cancel}
               </button>
               <button
                 type="button"
@@ -1228,7 +1208,7 @@ export function DrivePage() {
                 {renameMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  "Simpan"
+                  S.save
                 )}
               </button>
             </div>
@@ -1248,14 +1228,14 @@ export function DrivePage() {
               <div className="w-9 h-9 rounded-xl bg-danger/15 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
-              <h3 className="text-base font-semibold text-text-primary">Konfirmasi Hapus</h3>
+              <h3 className="text-base font-semibold text-text-primary">{S.deleteConfirmTitle}</h3>
             </div>
             <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
-              Apakah Anda yakin ingin menghapus permanen{" "}
+              {S.deleteConfirmBodyPrefix}{" "}
               <span className="font-semibold text-text-primary break-all">
                 &ldquo;{itemToDelete.name}&rdquo;
               </span>{" "}
-              dari Google Drive?
+              {S.deleteConfirmBodySuffix}
             </p>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
@@ -1263,7 +1243,7 @@ export function DrivePage() {
                 onClick={() => setItemToDelete(null)}
                 className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover"
               >
-                Batal
+                {S.cancel}
               </button>
               <button
                 type="button"
@@ -1274,7 +1254,7 @@ export function DrivePage() {
                 {deleteMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  "Hapus"
+                  S.deleteItem
                 )}
               </button>
             </div>
@@ -1295,11 +1275,11 @@ export function DrivePage() {
                 <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
               <h3 className="text-base font-semibold text-text-primary">
-                Hapus {selectedIds.size} Item
+                {S.batchDeleteTitlePrefix} {selectedIds.size} {S.batchDeleteTitleSuffix}
               </h3>
             </div>
             <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
-              Apakah Anda yakin ingin menghapus permanen {selectedIds.size} item yang dipilih dari Google Drive? Tindakan ini tidak dapat dibatalkan.
+              {S.batchDeleteBody(selectedIds.size)}
             </p>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
@@ -1307,7 +1287,7 @@ export function DrivePage() {
                 onClick={() => setBatchDeleteConfirmOpen(false)}
                 className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover"
               >
-                Batal
+                {S.cancel}
               </button>
               <button
                 type="button"
@@ -1318,7 +1298,7 @@ export function DrivePage() {
                 {batchDeleteMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  `Hapus (${selectedIds.size})`
+                  `${S.deleteItem} (${selectedIds.size})`
                 )}
               </button>
             </div>
@@ -1337,7 +1317,7 @@ export function DrivePage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FolderPlus className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-semibold text-text-primary">Folder Baru</h3>
+                <h3 className="text-base font-semibold text-text-primary">{S.newFolder}</h3>
               </div>
               <button
                 type="button"
@@ -1349,7 +1329,7 @@ export function DrivePage() {
             </div>
             <input
               type="text"
-              placeholder="Nama folder..."
+              placeholder={S.newFolderPlaceholder}
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
@@ -1362,7 +1342,7 @@ export function DrivePage() {
                 onClick={() => setShowNewFolderModal(false)}
                 className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover"
               >
-                Batal
+                {S.cancel}
               </button>
               <button
                 type="button"
@@ -1373,7 +1353,7 @@ export function DrivePage() {
                 {createFolder.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  "Buat"
+                  S.create
                 )}
               </button>
             </div>
@@ -1392,7 +1372,7 @@ export function DrivePage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <UploadCloud className="w-5 h-5 text-accent" />
-                <h3 className="text-base font-semibold text-text-primary">Upload File Server ke Drive</h3>
+                <h3 className="text-base font-semibold text-text-primary">{S.uploadServerTitle}</h3>
               </div>
               <button
                 type="button"
@@ -1403,7 +1383,7 @@ export function DrivePage() {
               </button>
             </div>
             <p className="text-xs text-text-secondary leading-relaxed">
-              Masukkan path lengkap file pada server (VPS) untuk diunggah langsung ke folder Drive ini:
+              {S.uploadServerDesc}
             </p>
             <input
               type="text"
@@ -1418,20 +1398,20 @@ export function DrivePage() {
                 onClick={() => setUploadModalOpen(false)}
                 className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover"
               >
-                Batal
+                {S.cancel}
               </button>
               <button
                 type="button"
                 onClick={() => {
                   if (!manualLocalPath.trim()) {
-                    toast.error("Masukkan path file server");
+                    toast.error(S.uploadServerMissingPath);
                     return;
                   }
                   setUploadModalOpen(false);
                 }}
                 className="min-h-[38px] px-4 rounded-xl text-sm font-medium bg-accent hover:bg-accent-hover text-white transition-colors"
               >
-                Lanjutkan
+                {S.continueLabel}
               </button>
             </div>
           </div>

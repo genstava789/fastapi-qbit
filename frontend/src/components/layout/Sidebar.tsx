@@ -116,7 +116,12 @@ export function Sidebar() {
         )}
         {navItems.map(({ path, icon: Icon, label }) => {
           const isItemActive = (isActive: boolean) =>
-            isActive || (path === "/drive" && location.pathname.startsWith("/drive"));
+            isActive ||
+            (path === "/drive" &&
+              (location.pathname.startsWith("/drive") ||
+                location.pathname.startsWith("/file/") ||
+                location.pathname.startsWith("/preview/") ||
+                location.pathname.startsWith("/folder/")));
 
           return (
             <NavLink

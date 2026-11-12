@@ -50,7 +50,12 @@ export function MobileBottomNav() {
       <div className="grid grid-cols-5 h-14">
         {bottomNavItems.map(({ path, icon: Icon, label }) => {
           const isItemActive = (isActive: boolean) =>
-            isActive || (path === "/drive" && location.pathname.startsWith("/drive"));
+            isActive ||
+            (path === "/drive" &&
+              (location.pathname.startsWith("/drive") ||
+                location.pathname.startsWith("/file/") ||
+                location.pathname.startsWith("/preview/") ||
+                location.pathname.startsWith("/folder/")));
 
           return (
             <NavLink
@@ -197,7 +202,12 @@ export function MobileDrawer() {
               </p>
               {drawerNavItems.map(({ path, icon: Icon, label }) => {
                 const isItemActive = (isActive: boolean) =>
-                  isActive || (path === "/drive" && location.pathname.startsWith("/drive"));
+                  isActive ||
+                  (path === "/drive" &&
+                    (location.pathname.startsWith("/drive") ||
+                      location.pathname.startsWith("/file/") ||
+                      location.pathname.startsWith("/preview/") ||
+                      location.pathname.startsWith("/folder/")));
 
                 return (
                   <NavLink

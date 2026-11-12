@@ -13,6 +13,7 @@ import { useAppStore } from "@/stores/appStore";
 import { formatBytes } from "@/lib/utils";
 import { ProgressBar, Badge, Skeleton } from "@/components/ui";
 import { DriveAuthModal, DriveFolderPickerModal } from "@/components/drive";
+import { UI_STRINGS } from "@/lib/strings";
 import {
   HardDrive,
   FolderOpen,
@@ -188,12 +189,12 @@ export function DriveSettingPage() {
                     type="button"
                     disabled={emptyTrashMutation.isPending}
                     onClick={() => {
-                      if (window.confirm("Kosongkan semua file sampah di Google Drive secara permanen?")) {
+                      if (window.confirm(UI_STRINGS.driveSettings.emptyTrashConfirm)) {
                         emptyTrashMutation.mutate();
                       }
                     }}
                     className="px-2 py-0.5 rounded-lg bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 text-[11px] font-medium transition-colors disabled:opacity-50"
-                    title="Kosongkan sampah Google Drive"
+                    title={UI_STRINGS.driveSettings.emptyTrashTitle}
                   >
                     {emptyTrashMutation.isPending ? "Clearing..." : "Empty"}
                   </button>

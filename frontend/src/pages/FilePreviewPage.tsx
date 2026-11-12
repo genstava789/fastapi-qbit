@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { useDriveFileMeta, useDriveApi } from "@/hooks/useDrive";
-import { formatBytes, formatCompactDate, cn } from "@/lib/utils";
+import {
+  useDriveFileMeta,
+  useDriveApi,
+  useDriveAuthStatus,
+  useDeleteDriveFile,
+} from "@/hooks/useDrive";
+import { formatBytes, formatCompactDate } from "@/lib/utils";
+import { UI_STRINGS } from "@/lib/strings";
 import { Skeleton, Badge } from "@/components/ui";
 import {
   ArrowLeft,
@@ -22,10 +28,18 @@ import {
   Share2,
   FolderOpen,
   Zap,
+  Trash2,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-function getFileCategory(mimeType: string, filename: string): "video" | "audio" | "image" | "pdf" | "text" | "other" {
+const S = UI_STRINGS.filePreview;
+
+function getFileCategory(
+  mimeType: string,
+  filename: string
+): "video" | "audio" | "image" | "pdf" | "text" | "other" {
   const ext = filename.split(".").pop()?.toLowerCase() || "";
 
   if (
@@ -95,12 +109,18 @@ export function FilePreviewPage() {
   const navigate = useNavigate();
   const api = useDriveApi();
 
+  const { data: authStatus } = useDriveAuthStatus();
   const { data: file, isLoading, error } = useDriveFileMeta(fileId);
+  const deleteMutation = useDeleteDriveFile();
+
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedDownloadUrl, setCopiedDownloadUrl] = useState(false);
+  const [copiedFileId, setCopiedFileId] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  const displayName = file?.name || fileName || "File Preview";
+  const canDelete = Boolean(api && authStatus?.authenticated);
+  const displayName = file?.name || fileName || S.fallbackTitle;
   const category = getFileCategory(file?.mimeType || "", displayName);
 
   // Cloudflare Edge Proxy Download URL: /download.aspx?id=:id&name=:name
@@ -120,7 +140,7 @@ export function FilePreviewPage() {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(previewPageUrl);
     setCopiedLink(true);
-    toast.success("Link pratinjau disalin");
+    toast.success(S.previewLinkCopied);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
@@ -128,19 +148,38 @@ export function FilePreviewPage() {
     const fullUrl = new URL(proxyDownloadUrl, window.location.origin).href;
     navigator.clipboard.writeText(fullUrl);
     setCopiedDownloadUrl(true);
-    toast.success("Tautan unduhan cepat disalin");
+    toast.success(S.directDownloadUrlCopied);
     setTimeout(() => setCopiedDownloadUrl(false), 2000);
+  };
+
+  const handleCopyFileId = () => {
+    if (!file?.id) return;
+    navigator.clipboard.writeText(file.id);
+    setCopiedFileId(true);
+    toast.success(S.fileIdCopied);
+    setTimeout(() => setCopiedFileId(false), 2000);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!file?.id) return;
+    deleteMutation.mutate(file.id, {
+      onSuccess: () => {
+        setDeleteConfirmOpen(false);
+        navigate("/drive", { replace: true });
+      },
+    });
   };
 
   if (isLoading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto py-2">
+      <div className="space-y-5 max-w-5xl mx-auto py-2">
         <div className="flex items-center gap-3">
           <Skeleton className="w-10 h-10 rounded-xl" />
           <Skeleton className="h-6 w-64" />
         </div>
-        <Skeleton className="w-full h-80 rounded-2xl" />
-        <Skeleton className="w-full h-40 rounded-2xl" />
+        <Skeleton className="w-full h-72 rounded-2xl" />
+        <Skeleton className="w-full h-28 rounded-2xl" />
+        <Skeleton className="w-full h-32 rounded-2xl" />
       </div>
     );
   }
@@ -151,66 +190,68 @@ export function FilePreviewPage() {
         <div className="w-14 h-14 rounded-2xl bg-danger/15 flex items-center justify-center mx-auto text-danger">
           <FileArchive className="w-7 h-7" />
         </div>
-        <h2 className="text-xl font-bold text-text-primary">File Tidak Ditemukan</h2>
-        <p className="text-sm text-text-secondary">
-          Tidak dapat memuat metadata file dari Google Drive. Pastikan file ada dan akun Drive terhubung.
-        </p>
+        <h2 className="text-xl font-bold text-text-primary">{S.notFoundTitle}</h2>
+        <p className="text-sm text-text-secondary">{S.notFoundDescription}</p>
         <button
           type="button"
           onClick={() => navigate("/drive")}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Kembali ke Google Drive</span>
+          <span>{S.backToDrive}</span>
         </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5 max-w-5xl mx-auto">
-      {/* ── Top Bar: Back, Path & Quick Actions ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+    <div className="space-y-4 sm:space-y-5 max-w-5xl mx-auto">
+      {/* ── Top Bar: Back, Breadcrumb, Title & Secondary Actions (Share, Open in Drive, Delete) ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             type="button"
             onClick={() => navigate(-1)}
             className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors flex-shrink-0"
-            title="Kembali"
-            aria-label="Kembali"
+            title={S.backTitle}
+            aria-label={S.backAria}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0">
               <Link
                 to="/drive"
-                className="text-xs text-text-muted hover:text-accent transition-colors flex items-center gap-1"
+                className="text-xs text-text-muted hover:text-accent transition-colors flex items-center gap-1 flex-shrink-0"
               >
                 <FolderOpen className="w-3.5 h-3.5" />
-                <span>Google Drive</span>
+                <span>{S.driveBreadcrumb}</span>
               </Link>
-              <span className="text-text-muted">/</span>
-              <span className="text-xs text-text-secondary truncate max-w-[200px] sm:max-w-xs">
+              <span className="text-text-muted flex-shrink-0">/</span>
+              <span className="text-xs text-text-secondary truncate">
                 {displayName}
               </span>
             </div>
-            <h1 className="text-lg sm:text-xl font-bold text-text-primary truncate max-w-md sm:max-w-xl mt-0.5">
+            <h1 className="text-base sm:text-xl font-bold text-text-primary truncate mt-0.5">
               {displayName}
             </h1>
           </div>
         </div>
 
-        {/* Top Right Quick Actions */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Focused Secondary Actions: Share Link, Open in Drive, Delete */}
+        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
           <button
             type="button"
             onClick={handleCopyLink}
             className="h-9 px-3 rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary text-xs font-medium transition-colors flex items-center gap-1.5"
-            title="Salin link halaman pratinjau"
+            title={S.shareLinkTitle}
           >
-            {copiedLink ? <Check className="w-3.5 h-3.5 text-success" /> : <Share2 className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">Bagikan</span>
+            {copiedLink ? (
+              <Check className="w-3.5 h-3.5 text-success" />
+            ) : (
+              <Share2 className="w-3.5 h-3.5" />
+            )}
+            <span>{copiedLink ? S.copied : S.shareLink}</span>
           </button>
 
           <a
@@ -218,21 +259,23 @@ export function FilePreviewPage() {
             target="_blank"
             rel="noopener noreferrer"
             className="h-9 px-3 rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary text-xs font-medium transition-colors flex items-center gap-1.5"
-            title="Buka langsung di Google Drive resmi"
+            title={S.openInDriveTitle}
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Buka di Drive</span>
+            <span>{S.openInDrive}</span>
           </a>
 
-          <a
-            href={proxyDownloadUrl}
-            download={displayName}
-            className="h-9 px-3.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-medium transition-colors shadow-sm shadow-accent/20 flex items-center gap-1.5"
-            title="Unduh langsung dengan proxy Cloudflare"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download</span>
-          </a>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmOpen(true)}
+              className="h-9 px-3 rounded-xl bg-danger/10 border border-danger/25 hover:bg-danger/20 text-danger text-xs font-medium transition-colors flex items-center gap-1.5"
+              title={S.deleteFileTitle}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{S.deleteFile}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -247,13 +290,13 @@ export function FilePreviewPage() {
               src={streamUrl}
               className="w-full max-h-[65vh] rounded-2xl bg-black object-contain shadow-xl"
             >
-              Browser Anda tidak mendukung pemutar video HTML5.
+              {S.videoNotSupported}
             </video>
           </div>
         )}
 
         {category === "audio" && (
-          <div className="p-8 sm:p-12 text-center space-y-6 max-w-lg mx-auto">
+          <div className="p-6 sm:p-12 text-center space-y-5 max-w-lg mx-auto">
             <div className="w-20 h-20 rounded-3xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-400 shadow-xl shadow-emerald-500/10">
               <Music className="w-10 h-10 animate-pulse" />
             </div>
@@ -266,13 +309,13 @@ export function FilePreviewPage() {
               </p>
             </div>
             <audio controls preload="metadata" src={streamUrl} className="w-full rounded-xl">
-              Browser Anda tidak mendukung pemutar audio HTML5.
+              {S.audioNotSupported}
             </audio>
           </div>
         )}
 
         {category === "image" && !imageError && (
-          <div className="w-full flex items-center justify-center p-2 min-h-[300px]">
+          <div className="w-full flex items-center justify-center p-2 min-h-[260px]">
             <img
               src={streamUrl}
               alt={displayName}
@@ -294,8 +337,8 @@ export function FilePreviewPage() {
         )}
 
         {(category === "other" || category === "text" || imageError) && (
-          <div className="p-8 sm:p-14 text-center space-y-5 max-w-md mx-auto">
-            <div className="w-20 h-20 rounded-3xl bg-surface-elevated border border-glass-border flex items-center justify-center mx-auto shadow-xl">
+          <div className="p-6 sm:p-12 text-center space-y-4 max-w-md mx-auto">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-surface-elevated border border-glass-border flex items-center justify-center mx-auto shadow-xl">
               {getHeroIcon(category)}
             </div>
             <div className="space-y-1">
@@ -303,139 +346,192 @@ export function FilePreviewPage() {
                 {displayName}
               </h2>
               <p className="text-xs text-text-muted">
-                {file.size !== null ? formatBytes(file.size) : "Ukuran tidak diketahui"}
+                {file.size !== null ? formatBytes(file.size) : S.unknownSize}
                 {file.mimeType ? ` · ${file.mimeType}` : ""}
               </p>
             </div>
-            <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-              <a
-                href={proxyDownloadUrl}
-                download={displayName}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent text-white text-xs sm:text-sm font-semibold hover:bg-accent-hover transition-colors shadow-lg shadow-accent/25"
-              >
-                <Download className="w-4 h-4" />
-                <span>Unduh File Sekarang</span>
-              </a>
-              <a
-                href={`https://drive.google.com/file/d/${file.id}/view`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-surface-elevated border border-glass-border text-text-secondary hover:text-text-primary text-xs sm:text-sm font-medium transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>Buka di Drive</span>
-              </a>
-            </div>
+            <p className="text-xs text-text-secondary leading-relaxed">
+              {S.noInlinePreview}
+            </p>
           </div>
         )}
       </div>
 
-      {/* ── Accelerated Download Card ── */}
-      <div className="glass rounded-2xl p-4 sm:p-5 border border-glass-border space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
+      {/* ── Single Download & Copy URL Action Hub: Cloudflare Edge Fast Download ── */}
+      <div className="glass rounded-2xl p-3.5 sm:p-5 border border-glass-border space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center text-accent flex-shrink-0">
               <Zap className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
-                <span>Unduhan Cepat Cloudflare Edge</span>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2 flex-wrap">
+                <span>{S.edgeCardTitle}</span>
                 <Badge variant="accent" className="text-[10px] py-0 px-1.5 font-mono">
-                  Proxy CDN
+                  {S.edgeCardBadge}
                 </Badge>
               </h3>
-              <p className="text-[11px] text-text-muted">
-                Dialirkan melalui edge network Cloudflare dengan dukungan multithreading & pause/resume
+              <p className="text-[11px] text-text-muted mt-0.5 leading-snug">
+                {S.edgeCardSubtitle}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
               onClick={handleCopyDownloadUrl}
-              className="h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary text-xs font-medium transition-colors flex items-center gap-1"
-              title="Salin tautan unduhan langsung"
+              className="h-10 sm:h-9 px-3 rounded-xl sm:rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+              title={S.copyUrlTitle}
             >
-              {copiedDownloadUrl ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>Salin URL</span>
+              {copiedDownloadUrl ? (
+                <Check className="w-3.5 h-3.5 text-success" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span>{copiedDownloadUrl ? S.copied : S.copyUrl}</span>
             </button>
             <a
               href={proxyDownloadUrl}
               download={displayName}
-              className="h-8 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm"
+              className="h-10 sm:h-9 px-3.5 rounded-xl sm:rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-medium transition-colors flex items-center justify-center gap-1.5 shadow-sm shadow-accent/20"
+              title={S.directDownloadTitle}
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Download Langsung</span>
+              <span>{S.directDownload}</span>
             </a>
           </div>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-surface-elevated/70 border border-glass-border text-xs font-mono text-text-muted break-all flex items-center justify-between gap-2">
+        <div className="p-2.5 rounded-xl bg-surface-elevated/70 border border-glass-border text-xs font-mono text-text-muted flex items-center justify-between gap-2">
           <span className="truncate">{proxyDownloadUrl}</span>
-          <span className="text-[10px] text-text-muted flex-shrink-0 uppercase font-semibold">GET /download.aspx</span>
+          <span className="text-[10px] text-text-muted flex-shrink-0 uppercase font-semibold">
+            GET /download.aspx
+          </span>
         </div>
       </div>
 
-      {/* ── Metadata Grid ── */}
-      <div className="glass rounded-2xl p-5 border border-glass-border space-y-4">
-        <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+      {/* ── Compact File Information & Metadata Card ── */}
+      <div className="glass rounded-2xl p-3.5 sm:p-4 border border-glass-border space-y-2.5">
+        <h3 className="text-xs sm:text-sm font-semibold text-text-primary flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-accent" />
-          <span>Informasi & Metadata File</span>
+          <span>{S.metadataTitle}</span>
         </h3>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-          <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border">
-            <span className="text-text-muted flex items-center gap-1.5">
-              <HardDrive className="w-3.5 h-3.5 text-accent" /> Ukuran File
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+          <div className="px-3 py-2 rounded-xl bg-surface-elevated/60 border border-glass-border/70">
+            <span className="text-[11px] text-text-muted flex items-center gap-1.5">
+              <HardDrive className="w-3 h-3 text-accent flex-shrink-0" />
+              <span>{S.fileSize}</span>
             </span>
-            <p className="font-mono font-semibold text-text-primary mt-1 text-sm">
+            <p className="font-mono font-semibold text-text-primary mt-0.5 text-xs sm:text-sm truncate">
               {file.size !== null ? formatBytes(file.size) : "-"}
             </p>
           </div>
 
-          <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border">
-            <span className="text-text-muted flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-warning" /> Tipe Konten (MIME)
+          <div className="px-3 py-2 rounded-xl bg-surface-elevated/60 border border-glass-border/70">
+            <span className="text-[11px] text-text-muted flex items-center gap-1.5">
+              <Calendar className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+              <span>{S.lastModified}</span>
             </span>
-            <p className="font-mono font-semibold text-text-primary mt-1 truncate" title={file.mimeType}>
-              {file.mimeType || "application/octet-stream"}
-            </p>
-          </div>
-
-          <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border">
-            <span className="text-text-muted flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-emerald-400" /> Terakhir Dimodifikasi
-            </span>
-            <p className="font-mono font-semibold text-text-primary mt-1">
+            <p className="font-mono font-semibold text-text-primary mt-0.5 text-xs sm:text-sm truncate">
               {file.modifiedTime ? formatCompactDate(file.modifiedTime) : "-"}
             </p>
           </div>
 
-          <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border col-span-1 sm:col-span-2 md:col-span-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="min-w-0">
-              <span className="text-text-muted flex items-center gap-1.5">
-                <Hash className="w-3.5 h-3.5 text-purple-400" /> Google Drive File ID
+          <div className="col-span-2 sm:col-span-1 px-3 py-2 rounded-xl bg-surface-elevated/60 border border-glass-border/70 flex items-center justify-between gap-3 sm:block">
+            <span className="text-[11px] text-text-muted flex items-center gap-1.5 flex-shrink-0">
+              <Tag className="w-3 h-3 text-warning flex-shrink-0" />
+              <span>{S.mimeType}</span>
+            </span>
+            <p
+              className="font-mono font-semibold text-text-primary sm:mt-0.5 truncate text-right sm:text-left"
+              title={file.mimeType}
+            >
+              {file.mimeType || "application/octet-stream"}
+            </p>
+          </div>
+
+          <div className="col-span-2 sm:col-span-3 px-3 py-2 rounded-xl bg-surface-elevated/60 border border-glass-border/70 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Hash className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+              <span className="text-[11px] text-text-muted flex-shrink-0">
+                {S.driveId}
               </span>
-              <p className="font-mono font-semibold text-text-primary mt-1 truncate select-all">
+              <span className="font-mono font-semibold text-text-primary truncate select-all">
                 {file.id}
-              </p>
+              </span>
             </div>
             <button
               type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(file.id);
-                toast.success("File ID disalin");
-              }}
-              className="self-start sm:self-auto px-2.5 py-1 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover text-xs text-text-secondary hover:text-text-primary transition-colors flex items-center gap-1"
+              onClick={handleCopyFileId}
+              className="px-2 py-1 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors flex items-center gap-1 flex-shrink-0"
+              title={S.copyIdTitle}
             >
-              <Copy className="w-3 h-3" />
-              <span>Salin ID</span>
+              {copiedFileId ? (
+                <Check className="w-3 h-3 text-success" />
+              ) : (
+                <Copy className="w-3 h-3" />
+              )}
+              <span>{copiedFileId ? S.copied : S.copyId}</span>
             </button>
           </div>
         </div>
       </div>
+
+      {/* ── Delete Confirmation Modal ── */}
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => !deleteMutation.isPending && setDeleteConfirmOpen(false)}
+          />
+          <div className="relative w-full max-w-sm glass bg-surface-overlay border border-glass-border rounded-2xl p-5 space-y-4 shadow-2xl z-10">
+            <div className="flex items-center gap-3 text-danger">
+              <div className="w-9 h-9 rounded-xl bg-danger/15 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-danger" />
+              </div>
+              <h3 className="text-base font-semibold text-text-primary">
+                {S.deleteModalTitle}
+              </h3>
+            </div>
+            <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
+              {S.deleteModalConfirmPrefix}{" "}
+              <span className="font-semibold text-text-primary break-all">
+                &ldquo;{displayName}&rdquo;
+              </span>{" "}
+              {S.deleteModalConfirmSuffix}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={deleteMutation.isPending}
+                className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover disabled:opacity-50"
+              >
+                {S.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleteMutation.isPending}
+                className="min-h-[38px] px-4 rounded-xl text-sm font-medium bg-danger hover:bg-danger/80 text-white disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{S.deleting}</span>
+                  </>
+                ) : (
+                  S.confirmDelete
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 export default FilePreviewPage;
