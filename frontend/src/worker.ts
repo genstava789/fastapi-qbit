@@ -364,21 +364,39 @@ export default {
       env.DEFAULT_BACKEND_URL ||
       "https://mild-leaf.nyc.boxd.sh";
 
-    // ── Route 1: Explicit Preview SPA Routes ────────────────────────────────
-    // /preview/:fileId or /preview/:fileId/:fileName or /file/... with ?view=1 or ?preview=1
-    const wantsPreview =
+    // ── Check Request Destination & Purpose ─────────────────────────────────
+    // Browser page navigation (address bar, link click, page refresh F5) sends:
+    // Sec-Fetch-Dest: document and Accept: text/html
+    const isDocNavigation =
+      request.headers.get("Sec-Fetch-Dest") === "document" &&
+      Boolean(request.headers.get("Accept")?.includes("text/html"));
+
+    const explicitDownload =
+      url.searchParams.has("download") ||
+      url.searchParams.has("dl") ||
+      url.searchParams.get("download") === "1";
+
+    const explicitPreview =
       pathname.startsWith("/preview/") ||
       url.searchParams.has("preview") ||
       url.searchParams.has("view") ||
       url.searchParams.get("a") === "view";
 
-    if (wantsPreview) {
+    // ── Route 1: Preview SPA Routes (/preview/*) ────────────────────────────
+    if (pathname.startsWith("/preview/")) {
       return env.ASSETS.fetch(request);
     }
 
-    // ── Route 2: Direct File Download Route (/file/:fileId or /file/:fileId/:fileName) ──
+    // ── Route 2: File Route (/file/:fileId or /file/:fileId/:fileName) ──────
     const fileMatch = pathname.match(/^\/file\/([^/]+)(?:\/(.*))?$/);
     if (fileMatch) {
+      // If the browser is viewing/refreshing the preview page (not an explicit download action):
+      // Serve the SPA Preview UI so page refresh (F5) reloads the page without auto-downloading!
+      if ((isDocNavigation || explicitPreview) && !explicitDownload) {
+        return env.ASSETS.fetch(request);
+      }
+
+      // Otherwise (explicit download click, ?download=1, media element stream, IDM/curl):
       const fileId = fileMatch[1];
       const fileName = fileMatch[2] ? decodeURIComponent(fileMatch[2]) : null;
       const isInline = url.searchParams.get("inline") === "true";

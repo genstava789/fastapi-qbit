@@ -103,10 +103,10 @@ export function FilePreviewPage() {
   const displayName = file?.name || fileName || "File Preview";
   const category = getFileCategory(file?.mimeType || "", displayName);
 
-  // Cloudflare Edge Proxy Download URL: /file/:fileId/:fileName
+  // Cloudflare Edge Proxy Download URL: /download.aspx?id=:id&name=:name
   const proxyDownloadUrl = fileId
-    ? `/file/${fileId}/${encodeURIComponent(displayName)}`
-    : `/download.aspx?id=${fileId}&name=${encodeURIComponent(displayName)}`;
+    ? `/download.aspx?id=${fileId}&name=${encodeURIComponent(displayName)}`
+    : `/download.aspx?name=${encodeURIComponent(displayName)}`;
 
   // Inline stream for video/audio players via Cloudflare Edge
   const streamUrl = fileId
@@ -114,7 +114,7 @@ export function FilePreviewPage() {
     : proxyDownloadUrl;
 
   const previewPageUrl = fileId
-    ? `${window.location.origin}/preview/${fileId}/${encodeURIComponent(displayName)}`
+    ? `${window.location.origin}/file/${fileId}/${encodeURIComponent(displayName)}`
     : window.location.href;
 
   const handleCopyLink = () => {

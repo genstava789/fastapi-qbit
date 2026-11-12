@@ -252,12 +252,12 @@ export function DrivePage() {
   };
 
   const handleDownload = async (file: DriveFileItem) => {
-    const downloadUrl = `/file/${file.id}/${encodeURIComponent(file.name)}`;
+    const downloadUrl = `/download.aspx?id=${file.id}&name=${encodeURIComponent(file.name)}`;
     window.location.href = downloadUrl;
   };
 
   const handlePreview = (file: DriveFileItem) => {
-    navigate(`/preview/${file.id}/${encodeURIComponent(file.name)}`);
+    navigate(`/file/${file.id}/${encodeURIComponent(file.name)}`);
   };
 
   const handleStartRename = (file: DriveFileItem) => {
