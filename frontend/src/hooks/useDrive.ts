@@ -47,6 +47,17 @@ export function useDriveBreadcrumb(folderId?: string) {
   });
 }
 
+export function useDriveFileMeta(fileId?: string) {
+  const api = useDriveApi();
+  const instance = useActiveInstance();
+  return useQuery({
+    queryKey: ["drive-file-meta", instance?.id, fileId],
+    queryFn: () => api!.getFileMeta(fileId!),
+    enabled: !!api && !!fileId,
+    retry: 1,
+  });
+}
+
 export function useDriveStorageQuota(enabled: boolean = true) {
   const api = useDriveApi();
   const instance = useActiveInstance();

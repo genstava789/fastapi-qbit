@@ -234,6 +234,32 @@ export function isTorrentComplete(torrent: {
 
 
 /**
+ * Compact date formatting (e.g. "12 Nov" for current year, "12 Nov '25" for prior years)
+ */
+export function formatCompactDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "";
+    const now = new Date();
+    const isCurrentYear = d.getFullYear() === now.getFullYear();
+
+    const dayMonth = d.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+    });
+
+    if (isCurrentYear) {
+      return dayMonth;
+    }
+    const shortYear = `'${String(d.getFullYear()).slice(-2)}`;
+    return `${dayMonth} ${shortYear}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Checks if a string representation of qBittorrent result or error message
  * corresponds to a successful TorrentsAddedMetadata response.
  */

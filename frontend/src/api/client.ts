@@ -183,6 +183,25 @@ export class DriveApi {
     return data;
   }
 
+  async getFileMeta(fileId: string): Promise<DriveFileItem> {
+    const { data } = await this.client.get<DriveFileItem>(`/drive/files/${fileId}/meta`);
+    return data;
+  }
+
+  getCloudflareProxyDownloadUrl(fileId: string, filename?: string): string {
+    const backendUrl = this.client.defaults.baseURL?.replace(/\/api\/v1\/?$/, "") || "";
+    const params = new URLSearchParams({
+      id: fileId,
+      name: filename || "download",
+      backend: backendUrl,
+    });
+    return `/download.aspx?${params.toString()}`;
+  }
+
+  getDirectStreamUrl(fileId: string): string {
+    return `${this.client.defaults.baseURL}/drive/stream/${fileId}`;
+  }
+
   async getStorageQuota(): Promise<DriveStorageQuota> {
     const { data } = await this.client.get<DriveStorageQuota>("/drive/storage");
     return data;

@@ -31,6 +31,9 @@ const DriveSettingPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
 );
+const FilePreviewPage = lazy(() =>
+  import("@/pages/FilePreviewPage").then((m) => ({ default: m.FilePreviewPage }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,6 +58,9 @@ export default function App() {
             <Route path="/files" element={<FileBrowserPage />} />
             <Route path="/drive" element={<DrivePage />} />
             <Route path="/drive-setting" element={<DriveSettingPage />} />
+            <Route path="/file/:fileId/:fileName" element={<FilePreviewPage />} />
+            <Route path="/file/:fileId" element={<FilePreviewPage />} />
+            <Route path="/folder/:folderId" element={<DrivePage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

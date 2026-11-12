@@ -549,6 +549,36 @@ class GDriveService:
             return f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType={export_mime}"
         return f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
 
+    def get_file_metadata(self, file_id: str) -> Dict[str, Any]:
+        """Fetch metadata for a single Google Drive file or folder."""
+        service = self._build_service()
+        fields = "id, name, mimeType, size, modifiedTime, createdTime, md5Checksum, webContentLink, webViewLink, thumbnailLink, parents, iconLink"
+        item = service.files().get(fileId=file_id, fields=fields).execute()
+        return {
+            "id": item["id"],
+            "name": item["name"],
+            "mimeType": item["mimeType"],
+            "size": int(item["size"]) if "size" in item else None,
+            "modifiedTime": item.get("modifiedTime"),
+            "createdTime": item.get("createdTime"),
+            "md5Checksum": item.get("md5Checksum"),
+            "webContentLink": item.get("webContentLink"),
+            "webViewLink": item.get("webViewLink"),
+            "thumbnailLink": item.get("thumbnailLink"),
+            "parents": item.get("parents", []),
+            "iconLink": item.get("iconLink"),
+        }
+
+    def open_download_stream(self, file_id: str, range_header: Optional[str] = None):
+        """Open a streaming connection to Google Drive API v3 alt=media with range header support."""
+        import requests
+        creds = self._get_credentials()
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+        headers = {"Authorization": f"Bearer {creds.token}"}
+        if range_header:
+            headers["Range"] = range_header
+        return requests.get(url, headers=headers, stream=True, timeout=60)
+
     def logout(self) -> None:
         """Delete token.json to log out."""
         if os.path.exists(TOKEN_FILE):

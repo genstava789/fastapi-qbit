@@ -1,7 +1,8 @@
 import os
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.schemas.gdrive import (
     DriveAuthCodeRequest,
@@ -420,6 +421,80 @@ def get_download_url(file_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get download URL: {str(e)}",
+        )
+
+
+@router.get(
+    "/files/{file_id}/meta",
+    response_model=DriveFileItem,
+    summary="Get File Metadata",
+    description="Get metadata for a single Google Drive file for previewing.",
+)
+def get_file_meta(file_id: str):
+    try:
+        return gdrive_service.get_file_metadata(file_id)
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch file metadata: {str(e)}",
+        )
+
+
+@router.get(
+    "/stream/{file_id}",
+    summary="Stream File Content",
+    description="Stream file directly from Google Drive API with Range header support.",
+)
+def stream_file_content(file_id: str, request: Request):
+    try:
+        meta = gdrive_service.get_file_metadata(file_id)
+        range_header = request.headers.get("Range")
+        resp = gdrive_service.open_download_stream(file_id, range_header=range_header)
+
+        filename = meta.get("name", "download")
+        mime_type = meta.get("mimeType") or "application/octet-stream"
+
+        response_headers = {
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": mime_type,
+            "Accept-Ranges": "bytes",
+            "Access-Control-Allow-Origin": "*",
+        }
+        if "Content-Length" in resp.headers:
+            response_headers["Content-Length"] = resp.headers["Content-Length"]
+        if "Content-Range" in resp.headers:
+            response_headers["Content-Range"] = resp.headers["Content-Range"]
+
+        status_code = resp.status_code if resp.status_code in (200, 206) else 200
+
+        def iterfile():
+            try:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        yield chunk
+            finally:
+                resp.close()
+
+        return StreamingResponse(
+            iterfile(),
+            status_code=status_code,
+            headers=response_headers,
+            media_type=mime_type,
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to stream file: {str(e)}",
         )
 
 

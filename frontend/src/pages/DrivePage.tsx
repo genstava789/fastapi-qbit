@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useParams, useNavigate } from "react-router-dom";
 import {
   useDriveApi,
   useDriveAuthStatus,
@@ -133,8 +133,9 @@ export function DrivePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Read current folder directly from URL query param
-  const currentFolderId = searchParams.get("folder") || undefined;
+  // Read current folder directly from route parameter or URL query param
+  const { folderId: routeFolderId } = useParams<{ folderId?: string }>();
+  const currentFolderId = routeFolderId || searchParams.get("folder") || undefined;
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -253,20 +254,15 @@ export function DrivePage() {
   const handleDownload = async (file: DriveFileItem) => {
     if (!api) return;
     try {
-      const res = await api.getDownloadUrl(file.id);
-      if (res.url) {
-        window.open(res.url, "_blank", "noopener,noreferrer");
-      } else {
-        toast.error("Tautan unduhan tidak tersedia");
-      }
+      const proxyUrl = api.getCloudflareProxyDownloadUrl(file.id, file.name);
+      window.location.href = proxyUrl;
     } catch {
       toast.error("Gagal mendapatkan tautan unduhan");
     }
   };
 
   const handlePreview = (file: DriveFileItem) => {
-    const previewUrl = `https://drive.google.com/file/d/${file.id}/view`;
-    window.open(previewUrl, "_blank", "noopener,noreferrer");
+    navigate(`/file/${file.id}/${encodeURIComponent(file.name)}`);
   };
 
   const handleStartRename = (file: DriveFileItem) => {
@@ -732,8 +728,8 @@ export function DrivePage() {
       </div>
 
       {/* ── Tier 4: Files & Folders Content List / Grid ── */}
-      {filesLoading ? (
-        <ListSkeleton rows={6} />
+      {filesLoading || filesFetching ? (
+        <ListSkeleton rows={viewMode === "grid" ? 8 : 6} />
       ) : filesError ? (
         /* Error State */
         <div className="glass rounded-2xl border border-danger/30 bg-danger/5 p-6 sm:p-8 text-center space-y-3">
@@ -770,12 +766,7 @@ export function DrivePage() {
           </div>
         </div>
       ) : (
-        <div
-          className={cn(
-            "transition-opacity duration-200",
-            filesFetching && "opacity-50 pointer-events-none"
-          )}
-        >
+        <div>
           {filteredItems.folders.length === 0 && filteredItems.files.length === 0 ? (
             <div className="glass rounded-2xl border border-glass-border py-14 text-center space-y-3">
               <FolderOpen className="w-10 h-10 mx-auto text-text-muted opacity-30" />
