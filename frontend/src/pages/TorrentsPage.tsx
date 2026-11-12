@@ -9,8 +9,9 @@ import { useAppStore } from "@/stores/appStore";
 import { TorrentTable, TorrentToolbar, ActiveDriveUploads } from "@/components/torrents";
 import { DriveAuthModal, BatchUploadToDriveModal } from "@/components/drive";
 import { Button, Skeleton, TorrentsSkeleton } from "@/components/ui";
-import { formatBytes, formatSpeed, filterTorrents, isTorrentComplete } from "@/lib/utils";
+import { formatBytes, formatSpeed, filterTorrents, isTorrentComplete, cn } from "@/lib/utils";
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
   Download,
@@ -23,15 +24,32 @@ import {
   X,
   UploadCloud,
   CheckSquare,
+  RefreshCw,
 } from "lucide-react";
 
 export function TorrentsPage() {
   const instance = useActiveInstance();
+  const qc = useQueryClient();
   const torrentFilter = useAppStore((s) => s.torrentFilter);
   const selectedTorrents = useAppStore((s) => s.selectedTorrents);
   const clearSelection = useAppStore((s) => s.clearSelection);
   const setDeleteConfirmHashes = useAppStore((s) => s.setDeleteConfirmHashes);
-  const { data: torrents, isLoading, error } = useTorrents();
+  const { data: torrents, isLoading, error, isFetching, refetch } = useTorrents();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetch(),
+        qc.invalidateQueries({ queryKey: ["main-stats", instance?.id] }),
+      ]);
+      toast.success("Torrents refreshed");
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
 
   const bulkPause = useBulkPauseTorrents();
   const bulkResume = useBulkResumeTorrents();
@@ -229,6 +247,17 @@ export function TorrentsPage() {
 
             <button
               type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing || isFetching}
+              className="min-h-[38px] px-2.5 rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary text-xs font-medium transition-colors flex items-center justify-center disabled:opacity-50"
+              title="Refresh torrents"
+              aria-label="Refresh torrents"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", (isRefreshing || isFetching) && "animate-spin")} />
+            </button>
+
+            <button
+              type="button"
               onClick={() => {
                 clearSelection();
                 setIsSelectMode(false);
@@ -240,7 +269,7 @@ export function TorrentsPage() {
           </div>
         </div>
       ) : (
-        /* Normal Mode: Clean Bar with [Select] button */
+        /* Normal Mode: Clean Bar with [Select] button & [Refresh] button */
         <div className="flex items-center justify-between gap-2 text-xs text-text-muted">
           <div className="flex items-center gap-2">
             <button
@@ -256,6 +285,18 @@ export function TorrentsPage() {
               {filtered.length} torrents
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing || isFetching}
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium disabled:opacity-50"
+            title="Refresh torrents list"
+            aria-label="Refresh torrents"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", (isRefreshing || isFetching) && "animate-spin")} />
+            <span className="hidden xs:inline">Refresh</span>
+          </button>
         </div>
       )}
 

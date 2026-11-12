@@ -476,6 +476,18 @@ export function DrivePage() {
             <span className="hidden sm:inline">Upload</span>
           </button>
 
+          {/* Refresh button */}
+          <button
+            type="button"
+            onClick={() => refetchFiles()}
+            disabled={filesFetching}
+            className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors disabled:opacity-50"
+            title="Segarkan daftar file"
+            aria-label="Segarkan"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", filesFetching && "animate-spin")} />
+          </button>
+
           {/* Settings button */}
           <button
             type="button"

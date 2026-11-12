@@ -197,17 +197,19 @@ export function Header() {
             </Badge>
           )}
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleGlobalRefresh}
-            disabled={isSpinning}
-            className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 p-2 text-text-secondary hover:text-text-primary disabled:opacity-50"
-            icon={<RefreshCw className={cn("w-4 h-4", isSpinning && "animate-spin")} />}
-            title="Sync data"
-          >
-            <span className="sr-only">Refresh</span>
-          </Button>
+          {!isDriveRoute && !isTorrentsRoute && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleGlobalRefresh}
+              disabled={isSpinning}
+              className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 p-2 text-text-secondary hover:text-text-primary disabled:opacity-50"
+              icon={<RefreshCw className={cn("w-4 h-4", isSpinning && "animate-spin")} />}
+              title="Sync data"
+            >
+              <span className="sr-only">Refresh</span>
+            </Button>
+          )}
 
           {!isDriveRoute && (
             <Button
