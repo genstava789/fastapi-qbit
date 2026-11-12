@@ -241,6 +241,13 @@ export class DriveApi {
     return data;
   }
 
+  async clearCompletedUploads(): Promise<{ success: boolean; cleared_count: number }> {
+    const { data } = await this.client.delete<{ success: boolean; cleared_count: number }>(
+      "/drive/uploads/completed"
+    );
+    return data;
+  }
+
   async getDownloadUrl(fileId: string): Promise<{ url: string; download_url: string }> {
     const { data } = await this.client.get<{ download_url?: string; url?: string }>(
       `/drive/download/${fileId}`

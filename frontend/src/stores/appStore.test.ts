@@ -121,4 +121,21 @@ describe("useAppStore", () => {
     store.saveTorrentRatio("newHash456", "Ubuntu 24.04 ISO", 2.1);
     expect(useAppStore.getState().getTorrentRatio("newHash456", "Ubuntu 24.04 ISO")).toBe(2.1);
   });
+
+  it("tracks completed Google Drive uploads by hash and filename", () => {
+    const store = useAppStore.getState();
+    store.markDriveUploadCompleted({
+      torrent_hash: "hash789",
+      filename: "archlinux.iso",
+      drive_file_id: "drive-file-123",
+    });
+
+    const completed = useAppStore.getState().completedDriveUploads;
+    expect(completed["hash789"]).toBeDefined();
+    expect(completed["hash789"]?.filename).toBe("archlinux.iso");
+    expect(completed["hash789"]?.drive_file_id).toBe("drive-file-123");
+
+    expect(completed["archlinux.iso"]).toBeDefined();
+    expect(completed["archlinux.iso"]?.drive_file_id).toBe("drive-file-123");
+  });
 });

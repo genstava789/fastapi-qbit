@@ -47,6 +47,9 @@ class DriveUploadProgress(BaseModel):
     status: str
     bytes_uploaded: int
     total_bytes: int
+    drive_file_id: Optional[str] = None
+    torrent_hash: Optional[str] = None
+    file_path: Optional[str] = None
 
 
 class DriveCreateFolderRequest(BaseModel):

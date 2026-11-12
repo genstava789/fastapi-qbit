@@ -28,7 +28,7 @@ export function Header() {
     ? "Search torrents..."
     : isFilesRoute
     ? "Filter files & folders..."
-    : "Jump to torrent (press Enter)...";
+    : "Jump to torrent...";
 
   const quickMatches = useMemo(() => {
     if (isInlineFilterRoute || !searchQuery.trim() || !torrents) return [];

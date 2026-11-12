@@ -58,6 +58,10 @@ export default function App() {
       </BrowserRouter>
       <Toaster
         position="bottom-right"
+        containerStyle={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 76px)",
+        }}
+        containerClassName="!bottom-[calc(env(safe-area-inset-bottom,0px)+76px)] md:!bottom-6"
         toastOptions={{
           style: {
             background: "rgba(12, 12, 15, 0.96)",

@@ -303,6 +303,16 @@ def list_uploads():
     return gdrive_service.get_all_uploads()
 
 
+@router.delete(
+    "/uploads/completed",
+    summary="Clear Completed Uploads",
+    description="Remove completed and failed uploads from the tracking list.",
+)
+def clear_completed_uploads():
+    cleared = gdrive_service.clear_completed_uploads()
+    return {"success": True, "cleared_count": cleared}
+
+
 # ── Download ─────────────────────────────────────────────────────────────
 
 

@@ -3,7 +3,7 @@ import { Modal } from "@/components/ui/Modal";
 import { DriveFolderPickerModal } from "./DriveFolderPickerModal";
 import { useUploadToDrive, useDriveDefaultPath } from "@/hooks/useDrive";
 import { useAppStore } from "@/stores/appStore";
-import { File, FolderOpen, Upload, Loader2 } from "lucide-react";
+import { File, FolderOpen, Upload, Loader2, CheckCircle2, ExternalLink } from "lucide-react";
 
 interface UploadToDriveModalProps {
   open: boolean;
@@ -16,6 +16,7 @@ export function UploadToDriveModal({ open, onClose, filePath, torrentHash }: Upl
   const driveDefaultFolderId = useAppStore((s) => s.driveDefaultFolderId);
   const driveDefaultFolderName = useAppStore((s) => s.driveDefaultFolderName);
   const setDriveDefaultFolder = useAppStore((s) => s.setDriveDefaultFolder);
+  const completedDriveUploads = useAppStore((s) => s.completedDriveUploads);
   const { mutation: defaultPathMutation } = useDriveDefaultPath();
 
   const [targetFolderId, setTargetFolderId] = useState<string>(
@@ -28,6 +29,9 @@ export function UploadToDriveModal({ open, onClose, filePath, torrentHash }: Upl
   const [setAsDefault, setSetAsDefault] = useState(false);
 
   const uploadMutation = useUploadToDrive();
+
+  const fileName = filePath.split("/").pop() || filePath;
+  const existingUpload = (torrentHash && completedDriveUploads[torrentHash]) || (fileName && completedDriveUploads[fileName]);
 
   const handleUpload = () => {
     if (setAsDefault) {
@@ -48,12 +52,34 @@ export function UploadToDriveModal({ open, onClose, filePath, torrentHash }: Upl
     );
   };
 
-  const fileName = filePath.split("/").pop() || filePath;
-
   return (
     <>
       <Modal open={open} onClose={onClose} title="Upload to Google Drive">
         <div className="space-y-5">
+          {/* Duplicate Prevention Notice */}
+          {existingUpload && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-1.5">
+              <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>This file is already uploaded to Google Drive</span>
+              </div>
+              <p className="text-text-secondary leading-relaxed">
+                A completed upload for this file was recorded{existingUpload.completed_at ? ` on ${new Date(existingUpload.completed_at).toLocaleDateString()}` : ""}. You can view the existing file directly or proceed below to upload another copy.
+              </p>
+              {existingUpload.drive_file_id && (
+                <a
+                  href={`https://drive.google.com/open?id=${existingUpload.drive_file_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-accent hover:underline font-medium pt-0.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Open existing file in Drive
+                </a>
+              )}
+            </div>
+          )}
+
           {/* Selected File */}
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-wider text-text-muted font-semibold">
@@ -114,7 +140,7 @@ export function UploadToDriveModal({ open, onClose, filePath, torrentHash }: Upl
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                Upload to Drive
+                {existingUpload ? "Re-upload to Drive" : "Upload to Drive"}
               </>
             )}
           </button>

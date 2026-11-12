@@ -64,6 +64,21 @@ interface AppState {
   reseedRatios: Record<string, number>;
   saveTorrentRatio: (hash: string, name: string, ratio: number) => void;
   getTorrentRatio: (hash?: string, name?: string) => number | undefined;
+
+  // Completed Google Drive uploads tracking
+  completedDriveUploads: Record<
+    string,
+    {
+      filename: string;
+      drive_file_id?: string;
+      completed_at: number;
+    }
+  >;
+  markDriveUploadCompleted: (upload: {
+    torrent_hash?: string;
+    filename: string;
+    drive_file_id?: string;
+  }) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -166,6 +181,27 @@ export const useAppStore = create<AppState>()(
         const val = Math.max(byHash || 0, byName || 0);
         return val > 0 ? val : undefined;
       },
+
+      // Completed Google Drive uploads tracking
+      completedDriveUploads: {},
+      markDriveUploadCompleted: (upload) => {
+        set((state) => {
+          const current = state.completedDriveUploads || {};
+          const next = { ...current };
+          const entry = {
+            filename: upload.filename,
+            drive_file_id: upload.drive_file_id,
+            completed_at: Date.now(),
+          };
+          if (upload.torrent_hash) {
+            next[upload.torrent_hash] = entry;
+          }
+          if (upload.filename) {
+            next[upload.filename] = entry;
+          }
+          return { completedDriveUploads: next };
+        });
+      },
     }),
     {
       name: "qbit-ui-storage",
@@ -176,6 +212,7 @@ export const useAppStore = create<AppState>()(
         driveDefaultFolderId: state.driveDefaultFolderId,
         driveDefaultFolderName: state.driveDefaultFolderName,
         reseedRatios: state.reseedRatios,
+        completedDriveUploads: state.completedDriveUploads,
       }),
     }
   )

@@ -6,7 +6,6 @@ import {
   useDriveFiles,
   useDriveBreadcrumb,
   useDriveStorageQuota,
-  useDriveUploads,
   useCreateDriveFolder,
 } from "@/hooks/useDrive";
 import { useQueryClient } from "@tanstack/react-query";
@@ -77,19 +76,19 @@ export function DrivePage() {
     const code = searchParams.get("code");
     if (code && api) {
       const redirectUri = `${window.location.origin}/drive`;
-      toast.loading("Menghubungkan akun Google Drive...", { id: "gdrive-oauth" });
+      toast.loading("Connecting Google Drive account...", { id: "gdrive-oauth" });
       api
         .exchangeAuthCode(code, redirectUri)
         .then((res) => {
           if (res.success) {
-            toast.success("Google Drive berhasil terhubung!", { id: "gdrive-oauth" });
+            toast.success("Google Drive connected successfully!", { id: "gdrive-oauth" });
             qc.invalidateQueries({ queryKey: ["drive-auth-status", instance?.id] });
           } else {
-            toast.error(res.message || "Gagal menghubungkan Google Drive", { id: "gdrive-oauth" });
+            toast.error(res.message || "Failed to connect Google Drive", { id: "gdrive-oauth" });
           }
         })
         .catch((err) => {
-          toast.error(err instanceof Error ? err.message : "Gagal otorisasi", { id: "gdrive-oauth" });
+          toast.error(err instanceof Error ? err.message : "Authorization failed", { id: "gdrive-oauth" });
         })
         .finally(() => {
           navigate("/drive", { replace: true });
@@ -105,7 +104,6 @@ export function DrivePage() {
   const { data: quota, isLoading: quotaLoading, refetch: refetchQuota } = useDriveStorageQuota(
     isAuthenticated
   );
-  const { data: uploads } = useDriveUploads();
 
   const createFolder = useCreateDriveFolder();
 
@@ -200,8 +198,7 @@ export function DrivePage() {
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-text-primary">Google Drive Integration</h1>
             <p className="text-text-secondary text-sm max-w-md mx-auto leading-relaxed">
-              Sambungkan akun Google Drive Anda untuk mengunggah file unduhan torrent secara langsung dari server
-              tanpa melalui perangkat lokal, serta jelajahi file cloud Anda secara instan.
+              Connect your Google Drive account to directly upload downloaded torrent files from the server without using local bandwidth, and explore your cloud files seamlessly.
             </p>
           </div>
           <button
@@ -210,7 +207,7 @@ export function DrivePage() {
             className="inline-flex items-center justify-center gap-2 px-6 min-h-[48px] rounded-xl bg-accent hover:bg-accent-hover text-white font-medium text-sm shadow-lg shadow-accent/25 transition-all"
           >
             <HardDrive className="w-5 h-5" />
-            Hubungkan Google Drive
+            Connect Google Drive
           </button>
         </div>
         <DriveAuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} />
@@ -231,16 +228,18 @@ export function DrivePage() {
             </Badge>
           </div>
           <p className="text-sm text-text-secondary mt-1">
-            Jelajahi file Google Drive & pantau background task upload torrent
+            Browse Google Drive files & monitor background torrent uploads
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Action Buttons: Responsive single-line fit on mobile */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
           <button
             type="button"
             onClick={handleRefresh}
-            className="min-w-[44px] min-h-[44px] px-3 flex items-center justify-center gap-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover text-sm font-medium transition-colors border border-glass-border"
+            className="min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover text-sm font-medium transition-colors border border-glass-border"
             title="Refresh"
+            aria-label="Refresh"
           >
             <RefreshCw className="w-4 h-4" />
             <span className="hidden sm:inline">Refresh</span>
@@ -249,26 +248,27 @@ export function DrivePage() {
           <button
             type="button"
             onClick={() => setShowNewFolderModal(true)}
-            className="min-w-[44px] min-h-[44px] px-3 flex items-center justify-center gap-2 rounded-xl text-text-primary hover:bg-glass-hover text-sm font-medium transition-colors border border-glass-border"
+            className="min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl text-text-primary hover:bg-glass-hover text-sm font-medium transition-colors border border-glass-border whitespace-nowrap"
           >
             <Plus className="w-4 h-4 text-accent" />
-            <span>Folder Baru</span>
+            <span><span className="hidden sm:inline">New </span>Folder</span>
           </button>
 
           <button
             type="button"
             onClick={() => setUploadModalOpen(true)}
-            className="min-w-[44px] min-h-[44px] px-3.5 flex items-center justify-center gap-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-sm font-medium transition-colors shadow-lg shadow-accent/20"
+            className="min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3.5 flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-sm font-medium transition-colors shadow-lg shadow-accent/20 whitespace-nowrap"
           >
             <UploadCloud className="w-4 h-4" />
-            <span>Upload Server File</span>
+            <span>Upload <span className="hidden sm:inline">Server </span>File</span>
           </button>
 
           <button
             type="button"
             onClick={handleLogout}
-            className="min-w-[44px] min-h-[44px] px-3 flex items-center justify-center gap-2 rounded-xl text-text-muted hover:text-danger hover:bg-danger/10 text-sm font-medium transition-colors border border-glass-border"
-            title="Logout / Disconnect"
+            className="min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl text-text-muted hover:text-danger hover:bg-danger/10 text-sm font-medium transition-colors border border-glass-border"
+            title="Disconnect"
+            aria-label="Disconnect"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Disconnect</span>
@@ -295,70 +295,16 @@ export function DrivePage() {
         ) : quota && quota.limit > 0 ? (
           <ProgressBar value={storagePercent} size="md" variant={storagePercent > 90 ? "danger" : "accent"} />
         ) : quota && quota.limit <= 0 ? (
-          <div className="text-xs text-text-muted">Penyimpanan: {formatBytes(quota.usage)} digunakan (Paket Unlimited / Tidak Terbatas)</div>
+          <div className="text-xs text-text-muted">Storage: {formatBytes(quota.usage)} used (Unlimited Storage)</div>
         ) : null}
 
         {quota && (
           <div className="flex items-center gap-4 text-xs text-text-muted flex-wrap">
-            <span>Di Drive: {formatBytes(quota.usageInDrive)}</span>
-            <span>Di Sampah: {formatBytes(quota.usageInTrash)}</span>
+            <span>In Drive: {formatBytes(quota.usageInDrive)}</span>
+            <span>Trash: {formatBytes(quota.usageInTrash)}</span>
           </div>
         )}
       </div>
-
-      {/* Background Uploads Section */}
-      {uploads && uploads.length > 0 && (
-        <div className="glass rounded-2xl p-4 sm:p-5 border border-glass-border space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <UploadCloud className="w-5 h-5 text-accent" />
-              <h2 className="text-sm font-semibold text-text-primary">Active Background Uploads</h2>
-            </div>
-            <Badge variant="accent">{uploads.length} Task</Badge>
-          </div>
-
-          <div className="space-y-2.5">
-            {uploads.map((up) => (
-              <div
-                key={up.upload_id}
-                className="p-3 rounded-xl bg-surface-elevated border border-glass-border space-y-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-text-primary truncate">{up.filename}</p>
-                    <p className="text-xs text-text-muted font-mono">
-                      {formatBytes(up.bytes_uploaded)} / {formatBytes(up.total_bytes)}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={
-                      up.status === "completed"
-                        ? "success"
-                        : up.status === "failed"
-                        ? "danger"
-                        : "accent"
-                    }
-                  >
-                    {up.status}
-                  </Badge>
-                </div>
-                <ProgressBar
-                  value={up.progress_percent}
-                  size="sm"
-                  showLabel
-                  variant={
-                    up.status === "completed"
-                      ? "success"
-                      : up.status === "failed"
-                      ? "danger"
-                      : "accent"
-                  }
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Navigation & Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -401,7 +347,7 @@ export function DrivePage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             type="text"
-            placeholder="Cari file / folder..."
+            placeholder="Search files & folders..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full min-h-[40px] pl-9 pr-8 py-1.5 rounded-xl text-sm bg-surface-elevated border border-glass-border text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
@@ -426,14 +372,14 @@ export function DrivePage() {
           {filteredItems.folders.length === 0 && filteredItems.files.length === 0 ? (
             <div className="py-16 text-center space-y-3">
               <FolderOpen className="w-12 h-12 mx-auto text-text-muted opacity-30" />
-              <p className="text-text-secondary text-sm">Folder ini kosong</p>
+              <p className="text-text-secondary text-sm">This folder is empty</p>
               <button
                 type="button"
                 onClick={() => setShowNewFolderModal(true)}
                 className="inline-flex items-center gap-1.5 text-xs text-accent hover:underline"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Buat folder baru
+                Create new folder
               </button>
             </div>
           ) : (
@@ -489,10 +435,10 @@ export function DrivePage() {
                       type="button"
                       onClick={() => handlePreview(file)}
                       className="min-w-[40px] min-h-[40px] px-2.5 flex items-center justify-center gap-1.5 rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover text-xs font-medium transition-colors"
-                      title="Pratinjau di Google Drive"
+                      title="Preview in Google Drive"
                     >
                       <ExternalLink className="w-4 h-4" />
-                      <span className="hidden md:inline">Pratinjau</span>
+                      <span className="hidden md:inline">Preview</span>
                     </button>
 
                     <button
@@ -521,7 +467,7 @@ export function DrivePage() {
           />
           <div className="relative w-full max-w-sm glass bg-surface-overlay border border-glass-border rounded-2xl p-5 space-y-4 shadow-2xl z-10">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-text-primary">Buat Folder Baru</h3>
+              <h3 className="text-base font-semibold text-text-primary">Create New Folder</h3>
               <button
                 type="button"
                 onClick={() => setShowNewFolderModal(false)}
@@ -532,7 +478,7 @@ export function DrivePage() {
             </div>
             <input
               type="text"
-              placeholder="Nama folder..."
+              placeholder="Folder name..."
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
@@ -545,7 +491,7 @@ export function DrivePage() {
                 onClick={() => setShowNewFolderModal(false)}
                 className="min-h-[44px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover"
               >
-                Batal
+                Cancel
               </button>
               <button
                 type="button"
@@ -556,7 +502,7 @@ export function DrivePage() {
                 {createFolder.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  "Buat"
+                  "Create"
                 )}
               </button>
             </div>
@@ -573,7 +519,7 @@ export function DrivePage() {
           />
           <div className="relative w-full max-w-md glass bg-surface-overlay border border-glass-border rounded-2xl p-5 space-y-4 shadow-2xl z-10">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-text-primary">Upload File Lokal Server ke Drive</h3>
+              <h3 className="text-base font-semibold text-text-primary">Upload Server File to Drive</h3>
               <button
                 type="button"
                 onClick={() => setUploadModalOpen(false)}
@@ -583,7 +529,7 @@ export function DrivePage() {
               </button>
             </div>
             <p className="text-xs text-text-secondary">
-              Masukkan path file lengkap di server VPS yang ingin diunggah ke Google Drive (atau pilih langsung dari menu File Browser):
+              Enter the full file path on the server to upload to Google Drive (or choose directly from the Files browser):
             </p>
             <input
               type="text"
@@ -598,13 +544,13 @@ export function DrivePage() {
                 onClick={() => setUploadModalOpen(false)}
                 className="min-h-[44px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover"
               >
-                Batal
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={() => {
                   if (!manualLocalPath.trim()) {
-                    toast.error("Masukkan path file server");
+                    toast.error("Please enter a server file path");
                     return;
                   }
                   // will open UploadToDriveModal with this path
@@ -612,7 +558,7 @@ export function DrivePage() {
                 }}
                 className="min-h-[44px] px-4 rounded-xl text-sm font-medium bg-accent hover:bg-accent-hover text-white transition-colors"
               >
-                Lanjutkan
+                Continue
               </button>
             </div>
           </div>

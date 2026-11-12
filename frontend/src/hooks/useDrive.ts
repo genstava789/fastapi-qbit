@@ -73,6 +73,18 @@ export function useDriveUploads() {
   });
 }
 
+export function useClearCompletedUploads() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: () => api!.clearCompletedUploads(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["drive-uploads", instance?.id] });
+    },
+  });
+}
+
 export function useUploadToDrive() {
   const api = useDriveApi();
   const qc = useQueryClient();

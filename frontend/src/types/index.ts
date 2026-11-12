@@ -133,6 +133,9 @@ export interface DriveUploadProgress {
   status: string;
   bytes_uploaded: number;
   total_bytes: number;
+  drive_file_id?: string;
+  torrent_hash?: string;
+  file_path?: string;
 }
 
 export interface DriveBreadcrumb {

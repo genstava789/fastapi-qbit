@@ -5,7 +5,7 @@ import {
   useBulkResumeTorrents,
 } from "@/hooks/useTorrents";
 import { useAppStore } from "@/stores/appStore";
-import { TorrentTable, TorrentToolbar } from "@/components/torrents";
+import { TorrentTable, TorrentToolbar, ActiveDriveUploads } from "@/components/torrents";
 import { Button, Skeleton, TorrentsSkeleton } from "@/components/ui";
 import { formatBytes, formatSpeed, filterTorrents } from "@/lib/utils";
 import { useMemo } from "react";
@@ -165,6 +165,9 @@ export function TorrentsPage() {
           </div>
         </div>
       )}
+
+      {/* Active Drive Background Upload Tasks */}
+      <ActiveDriveUploads />
 
       {/* Torrent List / Table or Skeleton */}
       {isLoading ? (

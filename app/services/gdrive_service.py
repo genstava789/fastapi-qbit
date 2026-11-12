@@ -35,6 +35,8 @@ class UploadState:
     bytes_uploaded: int = 0
     total_bytes: int = 0
     error: Optional[str] = None
+    drive_file_id: Optional[str] = None
+    torrent_hash: Optional[str] = None
 
 
 class GDriveService:
@@ -310,6 +312,7 @@ class GDriveService:
             folder_id=folder_id,
             status="uploading",
             total_bytes=total_bytes,
+            torrent_hash=torrent_hash,
         )
         self._uploads[upload_id] = upload_state
 
@@ -346,6 +349,8 @@ class GDriveService:
                 current_file_bytes = int(upload_status.progress() * file_size)
                 state.bytes_uploaded = min(state.total_bytes, base_uploaded + current_file_bytes)
                 state.progress_percent = round((state.bytes_uploaded / state.total_bytes) * 100, 2)
+        if response and response.get("id"):
+            state.drive_file_id = response.get("id")
         return file_size
 
     def _upload_directory(
@@ -359,6 +364,7 @@ class GDriveService:
         }
         drive_root = service.files().create(body=root_folder_meta, fields="id").execute()
         drive_root_id = drive_root["id"]
+        state.drive_file_id = drive_root_id
 
         folder_map = {os.path.abspath(dir_path): drive_root_id}
         uploaded_accumulated = 0
@@ -424,6 +430,9 @@ class GDriveService:
             "status": state.status,
             "bytes_uploaded": state.bytes_uploaded,
             "total_bytes": state.total_bytes,
+            "drive_file_id": state.drive_file_id,
+            "torrent_hash": state.torrent_hash,
+            "file_path": state.file_path,
         }
 
     def get_all_uploads(self) -> List[Dict[str, Any]]:
@@ -436,9 +445,22 @@ class GDriveService:
                 "status": s.status,
                 "bytes_uploaded": s.bytes_uploaded,
                 "total_bytes": s.total_bytes,
+                "drive_file_id": s.drive_file_id,
+                "torrent_hash": s.torrent_hash,
+                "file_path": s.file_path,
             }
             for s in self._uploads.values()
         ]
+
+    def clear_completed_uploads(self) -> int:
+        """Removes completed or failed uploads from in-memory tracking."""
+        to_delete = [
+            uid for uid, s in self._uploads.items()
+            if s.status in ("completed", "failed")
+        ]
+        for uid in to_delete:
+            del self._uploads[uid]
+        return len(to_delete)
 
     def get_folder_path(self, folder_id: str) -> List[Dict[str, str]]:
         """Build breadcrumb path from folder_id up to root."""

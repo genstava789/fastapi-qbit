@@ -29,9 +29,9 @@ import {
   ChevronRight,
   UploadCloud,
 } from "lucide-react";
-import type { TorrentItem, SortDirection } from "@/types";
+import type { TorrentItem, SortDirection, DriveUploadProgress } from "@/types";
 import { TorrentDetailModal } from "./TorrentDetailModal";
-import { useDriveAuthStatus } from "@/hooks/useDrive";
+import { useDriveAuthStatus, useDriveUploads } from "@/hooks/useDrive";
 import { DriveAuthModal, UploadToDriveModal } from "@/components/drive";
 import toast from "react-hot-toast";
 
@@ -73,6 +73,8 @@ function getBadgeVariant(state: string) {
 interface MobileTorrentCardProps {
   torrent: TorrentItem;
   ratio: string;
+  activeDriveUpload?: DriveUploadProgress;
+  completedDriveUpload?: { filename: string; drive_file_id?: string; completed_at?: number };
   isSelected: boolean;
   selectionMode: boolean;
   onToggleSelect: () => void;
@@ -85,6 +87,8 @@ interface MobileTorrentCardProps {
 function MobileTorrentCard({
   torrent,
   ratio,
+  activeDriveUpload,
+  completedDriveUpload,
   isSelected,
   selectionMode,
   onToggleSelect,
@@ -174,6 +178,36 @@ function MobileTorrentCard({
             <span className="text-xs font-mono font-semibold text-text-primary">
               {torrent.progress.toFixed(1)}%
             </span>
+
+            {/* Active Google Drive upload badge */}
+            {activeDriveUpload && (
+              <Badge
+                variant="accent"
+                className="gap-1 animate-pulse font-mono text-[11px] bg-accent/20 border-accent/40 text-accent"
+              >
+                <UploadCloud className="w-3.5 h-3.5 animate-spin" />
+                <span>Drive {Math.round(activeDriveUpload.progress_percent)}%</span>
+              </Badge>
+            )}
+
+            {/* In Drive badge if already uploaded */}
+            {!activeDriveUpload && completedDriveUpload && (
+              <a
+                href={
+                  completedDriveUpload.drive_file_id
+                    ? `https://drive.google.com/open?id=${completedDriveUpload.drive_file_id}`
+                    : `https://drive.google.com/drive/search?q=${encodeURIComponent(torrent.name)}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title="Uploaded to Google Drive - Click to open"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-success/15 text-success border border-success/30 hover:bg-success/25 transition-colors"
+              >
+                <Check className="w-3 h-3 stroke-[3]" />
+                <span>In Drive</span>
+              </a>
+            )}
           </div>
         </div>
 
@@ -329,6 +363,49 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
   } | null>(null);
 
   const { data: driveAuth } = useDriveAuthStatus();
+  const { data: driveUploads } = useDriveUploads();
+  const completedDriveUploads = useAppStore((s) => s.completedDriveUploads);
+  const markDriveUploadCompleted = useAppStore((s) => s.markDriveUploadCompleted);
+
+  // Sync any completed uploads to store so badges persist
+  useEffect(() => {
+    if (!driveUploads || driveUploads.length === 0) return;
+    for (const up of driveUploads) {
+      if (up.status === "completed") {
+        markDriveUploadCompleted({
+          filename: up.filename,
+          torrent_hash: up.torrent_hash,
+          drive_file_id: up.drive_file_id,
+        });
+      }
+    }
+  }, [driveUploads, markDriveUploadCompleted]);
+
+  const getDriveInfo = useCallback(
+    (t: TorrentItem) => {
+      const active = driveUploads?.find(
+        (up) =>
+          (up.status === "uploading" || up.status === "pending") &&
+          (up.torrent_hash === t.hash ||
+            up.filename === t.name ||
+            (up.file_path &&
+              (up.file_path.includes(t.hash) || up.file_path.endsWith(t.name))))
+      );
+
+      const completed =
+        (t.hash && completedDriveUploads[t.hash]) ||
+        (t.name && completedDriveUploads[t.name]) ||
+        driveUploads?.find(
+          (up) =>
+            up.status === "completed" &&
+            (up.torrent_hash === t.hash || up.filename === t.name)
+        );
+
+      return { active, completed };
+    },
+    [driveUploads, completedDriveUploads]
+  );
+
   const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
   const [uploadDrivePath, setUploadDrivePath] = useState<string | null>(null);
   const [uploadTorrentHash, setUploadTorrentHash] = useState<string | null>(null);
@@ -436,20 +513,25 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
           </div>
         )}
 
-        {visibleTorrents.map((t) => (
-          <MobileTorrentCard
-            key={t.hash}
-            torrent={t}
-            ratio={getRatio(t)}
-            isSelected={selectedTorrents.has(t.hash)}
-            selectionMode={selectionMode}
-            onToggleSelect={() => toggleSelection(t.hash)}
-            onOpenDetail={() => setDetailHash(t.hash)}
-            onPause={() => pauseMutation.mutate(t.hash)}
-            onResume={() => resumeMutation.mutate(t.hash)}
-            onOpenMenu={() => setMobileSheetTorrent(t)}
-          />
-        ))}
+        {visibleTorrents.map((t) => {
+          const driveInfo = getDriveInfo(t);
+          return (
+            <MobileTorrentCard
+              key={t.hash}
+              torrent={t}
+              ratio={getRatio(t)}
+              activeDriveUpload={driveInfo.active}
+              completedDriveUpload={driveInfo.completed}
+              isSelected={selectedTorrents.has(t.hash)}
+              selectionMode={selectionMode}
+              onToggleSelect={() => toggleSelection(t.hash)}
+              onOpenDetail={() => setDetailHash(t.hash)}
+              onPause={() => pauseMutation.mutate(t.hash)}
+              onResume={() => resumeMutation.mutate(t.hash)}
+              onOpenMenu={() => setMobileSheetTorrent(t)}
+            />
+          );
+        })}
 
         {filtered.length === 0 && (
           <div className="glass rounded-2xl p-10 text-center">
@@ -546,138 +628,194 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
               </tr>
             </thead>
             <tbody>
-              {visibleTorrents.map((t) => (
-                <tr
-                  key={t.hash}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setContextMenu({ x: e.clientX, y: e.clientY, hash: t.hash });
-                  }}
-                  className={cn(
-                    "border-b border-glass-border/50 transition-colors",
-                    selectedTorrents.has(t.hash)
-                      ? "bg-accent/5"
-                      : "hover:bg-glass-hover/30"
-                  )}
-                >
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedTorrents.has(t.hash)}
-                      onChange={() => toggleSelection(t.hash)}
-                      className="rounded border-glass-border bg-surface-elevated accent-accent"
-                    />
-                  </td>
-                  <td
-                    className="px-4 py-3 cursor-pointer"
-                    onClick={() => setDetailHash(t.hash)}
+              {visibleTorrents.map((t) => {
+                const driveInfo = getDriveInfo(t);
+                return (
+                  <tr
+                    key={t.hash}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, hash: t.hash });
+                    }}
+                    className={cn(
+                      "border-b border-glass-border/50 transition-colors",
+                      selectedTorrents.has(t.hash)
+                        ? "bg-accent/5"
+                        : "hover:bg-glass-hover/30"
+                    )}
                   >
-                    <div className="max-w-xs">
-                      <p className="font-medium text-text-primary truncate hover:text-accent transition-colors">
-                        {t.name}
-                      </p>
-                      <p className="text-xs text-text-muted font-mono truncate mt-0.5">
-                        {t.hash.substring(0, 12)}...
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={getBadgeVariant(t.state)}>
-                      {getTorrentStateLabel(t.state)}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <ProgressBar value={t.progress} showLabel size="sm" />
-                  </td>
-                  <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">
-                    {formatBytes(t.total_size)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-xs">
-                    <span
-                      className={cn(
-                        "font-semibold",
-                        parseFloat(getRatio(t)) >= 1.0
-                          ? "text-success"
-                          : "text-text-secondary"
-                      )}
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedTorrents.has(t.hash)}
+                        onChange={() => toggleSelection(t.hash)}
+                        className="rounded border-glass-border bg-surface-elevated accent-accent"
+                      />
+                    </td>
+                    <td
+                      className="px-4 py-3 cursor-pointer"
+                      onClick={() => setDetailHash(t.hash)}
                     >
-                      {getRatio(t)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-accent font-mono text-xs">
-                      {t.download_speed > 0
-                        ? formatSpeed(t.download_speed)
-                        : "—"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-success font-mono text-xs">
-                      {t.upload_speed > 0 ? formatSpeed(t.upload_speed) : "—"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">
-                    {t.eta > 0 && t.eta < 8640000 ? formatEta(t.eta) : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setDetailHash(t.hash)}
-                        className="p-1.5 rounded-lg hover:bg-info/10 text-text-muted hover:text-info transition-colors"
-                        title="Details"
+                      <div className="max-w-xs">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-text-primary truncate hover:text-accent transition-colors">
+                            {t.name}
+                          </p>
+                          {driveInfo.active && (
+                            <Badge
+                              variant="accent"
+                              className="gap-1 animate-pulse font-mono text-[10px] py-0 px-1.5 flex-shrink-0"
+                            >
+                              <UploadCloud className="w-3 h-3 animate-spin" />
+                              <span>Drive {Math.round(driveInfo.active.progress_percent)}%</span>
+                            </Badge>
+                          )}
+                          {!driveInfo.active && driveInfo.completed && (
+                            <a
+                              href={
+                                driveInfo.completed.drive_file_id
+                                  ? `https://drive.google.com/open?id=${driveInfo.completed.drive_file_id}`
+                                  : `https://drive.google.com/drive/search?q=${encodeURIComponent(t.name)}`
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Uploaded to Google Drive - Click to open"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-success/15 text-success border border-success/30 hover:bg-success/25 transition-colors flex-shrink-0"
+                            >
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              <span>In Drive</span>
+                            </a>
+                          )}
+                        </div>
+                        <p className="text-xs text-text-muted font-mono truncate mt-0.5">
+                          {t.hash.substring(0, 12)}...
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={getBadgeVariant(t.state)}>
+                        {getTorrentStateLabel(t.state)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <ProgressBar value={t.progress} showLabel size="sm" />
+                    </td>
+                    <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">
+                      {formatBytes(t.total_size)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs">
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          parseFloat(getRatio(t)) >= 1.0
+                            ? "text-success"
+                            : "text-text-secondary"
+                        )}
                       >
-                        <Info className="w-4 h-4" />
-                      </button>
-                      {t.state.includes("paused") ? (
+                        {getRatio(t)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-accent font-mono text-xs">
+                        {t.download_speed > 0
+                          ? formatSpeed(t.download_speed)
+                          : "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-success font-mono text-xs">
+                        {t.upload_speed > 0 ? formatSpeed(t.upload_speed) : "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">
+                      {t.eta > 0 && t.eta < 8640000 ? formatEta(t.eta) : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
-                          onClick={() => resumeMutation.mutate(t.hash)}
-                          className="p-1.5 rounded-lg hover:bg-success/10 text-text-muted hover:text-success transition-colors"
-                          title="Resume"
+                          onClick={() => setDetailHash(t.hash)}
+                          className="p-1.5 rounded-lg hover:bg-info/10 text-text-muted hover:text-info transition-colors"
+                          title="Details"
                         >
-                          <Play className="w-4 h-4" />
+                          <Info className="w-4 h-4" />
                         </button>
-                      ) : (
+                        {t.state.includes("paused") ? (
+                          <button
+                            type="button"
+                            onClick={() => resumeMutation.mutate(t.hash)}
+                            className="p-1.5 rounded-lg hover:bg-success/10 text-text-muted hover:text-success transition-colors"
+                            title="Resume"
+                          >
+                            <Play className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => pauseMutation.mutate(t.hash)}
+                            className="p-1.5 rounded-lg hover:bg-warning/10 text-text-muted hover:text-warning transition-colors"
+                            title="Pause"
+                          >
+                            <Pause className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => pauseMutation.mutate(t.hash)}
-                          className="p-1.5 rounded-lg hover:bg-warning/10 text-text-muted hover:text-warning transition-colors"
-                          title="Pause"
+                          onClick={() => setDeleteConfirmHash(t.hash)}
+                          className="p-1.5 rounded-lg hover:bg-danger/10 text-text-muted hover:text-danger transition-colors"
+                          title="Delete"
                         >
-                          <Pause className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmHash(t.hash)}
-                        className="p-1.5 rounded-lg hover:bg-danger/10 text-text-muted hover:text-danger transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      {api && (
-                        <a
-                          href={api.getExportUrl(t.hash)}
-                          download
-                          className="p-1.5 rounded-lg hover:bg-accent/10 text-text-muted hover:text-accent transition-colors"
-                          title="Download .torrent"
-                        >
-                          <FileDown className="w-4 h-4" />
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleUploadToDrive(t)}
-                        className="p-1.5 rounded-lg hover:bg-accent/10 text-text-muted hover:text-accent transition-colors"
-                        title="Upload to Google Drive"
-                      >
-                        <UploadCloud className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {api && (
+                          <a
+                            href={api.getExportUrl(t.hash)}
+                            download
+                            className="p-1.5 rounded-lg hover:bg-accent/10 text-text-muted hover:text-accent transition-colors"
+                            title="Download .torrent"
+                          >
+                            <FileDown className="w-4 h-4" />
+                          </a>
+                        )}
+                        {driveInfo.active ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="p-1.5 rounded-lg text-accent transition-colors cursor-not-allowed opacity-80"
+                            title={`Uploading to Drive (${Math.round(driveInfo.active.progress_percent)}%)`}
+                          >
+                            <UploadCloud className="w-4 h-4 animate-spin" />
+                          </button>
+                        ) : driveInfo.completed ? (
+                          <a
+                            href={
+                              driveInfo.completed.drive_file_id
+                                ? `https://drive.google.com/open?id=${driveInfo.completed.drive_file_id}`
+                                : `https://drive.google.com/drive/search?q=${encodeURIComponent(t.name)}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg hover:bg-success/10 text-success transition-colors"
+                            title="Already uploaded to Google Drive - Click to open"
+                          >
+                            <Check className="w-4 h-4 stroke-[2.5]" />
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleUploadToDrive(t)}
+                            className="p-1.5 rounded-lg hover:bg-accent/10 text-text-muted hover:text-accent transition-colors"
+                            title="Upload to Google Drive"
+                          >
+                            <UploadCloud className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center">
@@ -736,17 +874,63 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
               >
                 <Pause className="w-4 h-4" /> Pause
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const target = torrents.find((t) => t.hash === contextMenu.hash);
-                  setContextMenu(null);
-                  if (target) handleUploadToDrive(target);
-                }}
-                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-secondary hover:bg-glass-hover hover:text-text-primary transition-colors"
-              >
-                <UploadCloud className="w-4 h-4 text-accent" /> Upload to Drive
-              </button>
+              {(() => {
+                const target = torrents.find((t) => t.hash === contextMenu.hash);
+                const driveInfo = target ? getDriveInfo(target) : null;
+                if (driveInfo?.active) {
+                  return (
+                    <button
+                      type="button"
+                      disabled
+                      className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-muted cursor-not-allowed opacity-80"
+                    >
+                      <UploadCloud className="w-4 h-4 text-accent animate-spin" />
+                      Uploading ({Math.round(driveInfo.active.progress_percent)}%)
+                    </button>
+                  );
+                }
+                if (driveInfo?.completed) {
+                  return (
+                    <>
+                      <a
+                        href={
+                          driveInfo.completed.drive_file_id
+                            ? `https://drive.google.com/open?id=${driveInfo.completed.drive_file_id}`
+                            : `https://drive.google.com/drive/search?q=${encodeURIComponent(target!.name)}`
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setContextMenu(null)}
+                        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-success hover:bg-success/10 transition-colors"
+                      >
+                        <Check className="w-4 h-4 text-success stroke-[2.5]" /> Open in Drive
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setContextMenu(null);
+                          if (target) handleUploadToDrive(target);
+                        }}
+                        className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-secondary hover:bg-glass-hover hover:text-text-primary transition-colors"
+                      >
+                        <UploadCloud className="w-4 h-4 text-accent" /> Re-upload to Drive
+                      </button>
+                    </>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContextMenu(null);
+                      if (target) handleUploadToDrive(target);
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-secondary hover:bg-glass-hover hover:text-text-primary transition-colors"
+                  >
+                    <UploadCloud className="w-4 h-4 text-accent" /> Upload to Drive
+                  </button>
+                );
+              })()}
               <hr className="border-glass-border my-1" />
               <button
                 type="button"
@@ -867,18 +1051,67 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
               </a>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                const t = mobileSheetTorrent;
-                setMobileSheetTorrent(null);
-                handleUploadToDrive(t);
-              }}
-              className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover"
-            >
-              <UploadCloud className="w-5 h-5 text-accent" />
-              Upload to Google Drive
-            </button>
+            {(() => {
+              const driveInfo = getDriveInfo(mobileSheetTorrent);
+              if (driveInfo.active) {
+                return (
+                  <button
+                    type="button"
+                    disabled
+                    className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-muted cursor-not-allowed opacity-80"
+                  >
+                    <UploadCloud className="w-5 h-5 text-accent animate-spin" />
+                    Uploading to Drive ({Math.round(driveInfo.active.progress_percent)}%)
+                  </button>
+                );
+              }
+              if (driveInfo.completed) {
+                return (
+                  <>
+                    <a
+                      href={
+                        driveInfo.completed.drive_file_id
+                          ? `https://drive.google.com/open?id=${driveInfo.completed.drive_file_id}`
+                          : `https://drive.google.com/drive/search?q=${encodeURIComponent(mobileSheetTorrent.name)}`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setMobileSheetTorrent(null)}
+                      className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-success hover:bg-success/10"
+                    >
+                      <Check className="w-5 h-5 text-success stroke-[2.5]" />
+                      Open in Google Drive
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const t = mobileSheetTorrent;
+                        setMobileSheetTorrent(null);
+                        handleUploadToDrive(t);
+                      }}
+                      className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover"
+                    >
+                      <UploadCloud className="w-5 h-5 text-accent" />
+                      Re-upload to Google Drive
+                    </button>
+                  </>
+                );
+              }
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = mobileSheetTorrent;
+                    setMobileSheetTorrent(null);
+                    handleUploadToDrive(t);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover"
+                >
+                  <UploadCloud className="w-5 h-5 text-accent" />
+                  Upload to Google Drive
+                </button>
+              );
+            })()}
 
             <div className="pt-2 border-t border-glass-border">
               <button
