@@ -21,6 +21,19 @@ services:
       - "6881:51007/udp"
     restart: unless-stopped
 
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./prowlarr-config:/config
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+
   api:
     build: .
     container_name: fastapi-qbit
@@ -35,14 +48,17 @@ services:
       - QBIT_PASSWORD=adminadmin
       - DEFAULT_SAVE_PATH=/downloads/
       - OAUTHLIB_RELAX_TOKEN_SCOPE=1
+      - PROWLARR_URL=http://prowlarr:9696
     volumes:
       - ./downloads:/downloads:ro
       - ./credentials.json:/app/credentials.json:ro
       - ./token.json:/app/token.json
       - ./gdrive_settings.json:/app/gdrive_settings.json
+      - ./prowlarr_settings.json:/app/prowlarr_settings.json
     ports:
       - "8000:8000"
     depends_on:
       - qbittorrent
+      - prowlarr
     restart: unless-stopped
 
