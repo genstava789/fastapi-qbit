@@ -58,6 +58,8 @@ export default function App() {
             <Route path="/files" element={<FileBrowserPage />} />
             <Route path="/drive" element={<DrivePage />} />
             <Route path="/drive-setting" element={<DriveSettingPage />} />
+            <Route path="/preview/:fileId/:fileName" element={<FilePreviewPage />} />
+            <Route path="/preview/:fileId" element={<FilePreviewPage />} />
             <Route path="/file/:fileId/:fileName" element={<FilePreviewPage />} />
             <Route path="/file/:fileId" element={<FilePreviewPage />} />
             <Route path="/folder/:folderId" element={<DrivePage />} />

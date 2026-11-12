@@ -103,16 +103,22 @@ export function FilePreviewPage() {
   const displayName = file?.name || fileName || "File Preview";
   const category = getFileCategory(file?.mimeType || "", displayName);
 
-  // Cloudflare Edge Proxy Download URL
-  const proxyDownloadUrl = api && fileId
-    ? api.getCloudflareProxyDownloadUrl(fileId, displayName)
+  // Cloudflare Edge Proxy Download URL: /file/:fileId/:fileName
+  const proxyDownloadUrl = fileId
+    ? `/file/${fileId}/${encodeURIComponent(displayName)}`
     : `/download.aspx?id=${fileId}&name=${encodeURIComponent(displayName)}`;
 
-  // Direct backend streaming URL (fallback / stream source)
-  const streamUrl = api && fileId ? api.getDirectStreamUrl(fileId) : proxyDownloadUrl;
+  // Inline stream for video/audio players via Cloudflare Edge
+  const streamUrl = fileId
+    ? `/file/${fileId}/${encodeURIComponent(displayName)}?inline=true`
+    : proxyDownloadUrl;
+
+  const previewPageUrl = fileId
+    ? `${window.location.origin}/preview/${fileId}/${encodeURIComponent(displayName)}`
+    : window.location.href;
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
+    navigator.clipboard.writeText(previewPageUrl);
     setCopiedLink(true);
     toast.success("Link pratinjau disalin");
     setTimeout(() => setCopiedLink(false), 2000);
@@ -122,7 +128,7 @@ export function FilePreviewPage() {
     const fullUrl = new URL(proxyDownloadUrl, window.location.origin).href;
     navigator.clipboard.writeText(fullUrl);
     setCopiedDownloadUrl(true);
-    toast.success("Tautan unduhan Cloudflare proxy disalin");
+    toast.success("Tautan unduhan cepat disalin");
     setTimeout(() => setCopiedDownloadUrl(false), 2000);
   };
 

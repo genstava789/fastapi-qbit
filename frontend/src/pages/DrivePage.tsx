@@ -252,17 +252,12 @@ export function DrivePage() {
   };
 
   const handleDownload = async (file: DriveFileItem) => {
-    if (!api) return;
-    try {
-      const proxyUrl = api.getCloudflareProxyDownloadUrl(file.id, file.name);
-      window.location.href = proxyUrl;
-    } catch {
-      toast.error("Gagal mendapatkan tautan unduhan");
-    }
+    const downloadUrl = `/file/${file.id}/${encodeURIComponent(file.name)}`;
+    window.location.href = downloadUrl;
   };
 
   const handlePreview = (file: DriveFileItem) => {
-    navigate(`/file/${file.id}/${encodeURIComponent(file.name)}`);
+    navigate(`/preview/${file.id}/${encodeURIComponent(file.name)}`);
   };
 
   const handleStartRename = (file: DriveFileItem) => {

@@ -3,17 +3,13 @@
  * Reference & architecture inspired by: GoogleDriveIndex (GDI)
  * https://gitlab.com/GoogleDriveIndex/Google-Drive-Index
  *
- * Provides accelerated edge downloads directly from Google Drive API v3:
- *  - GET /download.aspx?id={file_id}&name={filename}
- *  - GET /proxy/download?id={file_id}&name={filename}
- *  - GET /proxy/stream/{file_id}
- *
- * Benefits:
- * 1. Direct Edge-to-Edge streaming: Cloudflare Edge <-> Google Drive API v3.
- *    Bypasses the VPS backend so zero VPS bandwidth/CPU is consumed.
- * 2. Full HTTP Range support: multi-threaded downloads (IDM, aria2) and smooth video/audio seeking.
- * 3. Never downloads error HTML: returns clean streams or structured JSON errors.
- * 4. Google Workspace support: auto-exports Docs/Sheets/Slides to PDF/XLSX.
+ * Supported Routes:
+ *  - GET /file/:fileId/:fileName   -> Direct edge stream & download from Google Drive API v3
+ *  - GET /file/:fileId/:fileName?view=1 -> Serve interactive Preview UI (SPA)
+ *  - GET /preview/:fileId/:fileName     -> Serve interactive Preview UI (SPA)
+ *  - GET /download.aspx?id=:id&name=:name -> Direct edge download (GDI style)
+ *  - GET /proxy/stream/:fileId           -> Inline stream for HTML5 players
+ *  - Default                             -> Serve SPA static assets
  */
 
 interface Env {
@@ -45,9 +41,6 @@ const GDOC_EXPORT_FORMATS: Record<string, { mime: string; ext: string }> = {
 
 /**
  * Obtain a valid Google Drive OAuth access token.
- * 1. Check in-memory cache.
- * 2. If Worker secrets (refresh_token, client_id, secret) exist, refresh directly via Google OAuth2.
- * 3. Otherwise, query backend /api/v1/drive/token.
  */
 async function getAccessToken(backendBase: string, env: Env, forceRefresh = false): Promise<string> {
   const now = Date.now();
@@ -55,7 +48,7 @@ async function getAccessToken(backendBase: string, env: Env, forceRefresh = fals
     return cachedToken.accessToken;
   }
 
-  // Option A: Direct refresh if Worker environment contains OAuth secrets
+  // 1. Direct refresh if Worker environment contains OAuth secrets
   if (env.GDRIVE_REFRESH_TOKEN && env.GDRIVE_CLIENT_ID && env.GDRIVE_CLIENT_SECRET) {
     try {
       const resp = await fetch("https://oauth2.googleapis.com/token", {
@@ -84,7 +77,7 @@ async function getAccessToken(backendBase: string, env: Env, forceRefresh = fals
     }
   }
 
-  // Option B: Retrieve active token from FastAPI backend
+  // 2. Retrieve active token from FastAPI backend
   const tokenUrl = `${backendBase.replace(/\/+$/, "")}/api/v1/drive/token`;
   const resp = await fetch(tokenUrl, {
     method: "GET",
@@ -125,9 +118,210 @@ async function fetchFileMetadata(fileId: string, token: string): Promise<any | n
   return await res.json();
 }
 
+/**
+ * Stream file directly from Google Drive API v3 alt=media
+ */
+async function streamGoogleDriveFile(
+  fileId: string,
+  explicitFileName: string | null,
+  isInline: boolean,
+  exportFmt: string | null,
+  backendBase: string,
+  env: Env,
+  request: Request
+): Promise<Response> {
+  const clientRange = request.headers.get("Range");
+
+  try {
+    let token = await getAccessToken(backendBase, env);
+    let meta = await fetchFileMetadata(fileId, token);
+
+    // If metadata fetch failed with 401, refresh token and retry
+    if (!meta) {
+      token = await getAccessToken(backendBase, env, true);
+      meta = await fetchFileMetadata(fileId, token);
+    }
+
+    const fileName = explicitFileName || meta?.name || `file_${fileId}`;
+    const mimeType = meta?.mimeType || "application/octet-stream";
+
+    // Handle Google Workspace documents (Docs, Sheets, Slides) via Export API
+    const exportEntry = GDOC_EXPORT_FORMATS[mimeType];
+    if (exportEntry) {
+      const targetFmt = exportFmt || exportEntry.ext;
+      const exportMime = exportEntry.mime;
+      const exportUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        fileId
+      )}/export?mimeType=${encodeURIComponent(exportMime)}`;
+
+      const exportResp = await fetch(exportUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!exportResp.ok) {
+        const errText = await exportResp.text();
+        return new Response(
+          JSON.stringify({
+            error: `Failed to export Google Workspace file: ${errText}`,
+            status: exportResp.status,
+          }),
+          {
+            status: exportResp.status,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          }
+        );
+      }
+
+      const exportFileName = fileName.endsWith(`.${targetFmt}`)
+        ? fileName
+        : `${fileName}.${targetFmt}`;
+      const cleanAscii = exportFileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\;]/g, "");
+      const utf8Encoded = encodeURIComponent(exportFileName);
+
+      const exportHeaders = new Headers(exportResp.headers);
+      exportHeaders.set(
+        "Content-Disposition",
+        isInline
+          ? `inline; filename="${cleanAscii}"; filename*=UTF-8''${utf8Encoded}`
+          : `attachment; filename="${cleanAscii}"; filename*=UTF-8''${utf8Encoded}`
+      );
+      exportHeaders.set("Content-Type", exportMime);
+      exportHeaders.set("Access-Control-Allow-Origin", "*");
+      exportHeaders.set("Cache-Control", "public, max-age=3600");
+
+      return new Response(exportResp.body, {
+        status: 200,
+        headers: exportHeaders,
+      });
+    }
+
+    // Direct Google Drive API v3 alt=media binary streaming (GDI architecture)
+    const gdriveMediaUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+      fileId
+    )}?alt=media&supportsAllDrives=true`;
+
+    const driveHeaders: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+    if (clientRange) {
+      driveHeaders["Range"] = clientRange;
+    }
+
+    let gdriveResp = await fetch(gdriveMediaUrl, {
+      method: "GET",
+      headers: driveHeaders,
+    });
+
+    // If 401 Unauthorized, refresh token and retry once
+    if (gdriveResp.status === 401) {
+      token = await getAccessToken(backendBase, env, true);
+      driveHeaders["Authorization"] = `Bearer ${token}`;
+      gdriveResp = await fetch(gdriveMediaUrl, {
+        method: "GET",
+        headers: driveHeaders,
+      });
+    }
+
+    // If Google Drive returned an error status (e.g. 404, 403)
+    if (!gdriveResp.ok && gdriveResp.status !== 206) {
+      const errBody = await gdriveResp.text();
+
+      // Graceful fallback to backend stream endpoint if direct edge fetch failed
+      const fallbackUrl = `${backendBase.replace(/\/+$/, "")}/api/v1/drive/stream/${encodeURIComponent(fileId)}`;
+      const fallbackHeaders: Record<string, string> = {};
+      if (clientRange) fallbackHeaders["Range"] = clientRange;
+
+      const backendResp = await fetch(fallbackUrl, {
+        headers: fallbackHeaders,
+      });
+
+      if (backendResp.ok || backendResp.status === 206) {
+        const fbHeaders = new Headers(backendResp.headers);
+        fbHeaders.set("Access-Control-Allow-Origin", "*");
+        fbHeaders.set("X-Stream-Source", "Backend-Fallback");
+        return new Response(backendResp.body, {
+          status: backendResp.status,
+          headers: fbHeaders,
+        });
+      }
+
+      // Return structured JSON error instead of corrupt HTML
+      return new Response(
+        JSON.stringify({
+          error: `Google Drive API error (${gdriveResp.status})`,
+          details: errBody.substring(0, 500),
+          fileId,
+        }),
+        {
+          status: gdriveResp.status,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
+    // Build accelerated edge streaming response with clean RFC 6266 headers
+    const cleanAscii = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\;]/g, "");
+    const utf8Encoded = encodeURIComponent(fileName);
+    const disposition = isInline
+      ? `inline; filename="${cleanAscii}"; filename*=UTF-8''${utf8Encoded}`
+      : `attachment; filename="${cleanAscii}"; filename*=UTF-8''${utf8Encoded}`;
+
+    const respHeaders = new Headers();
+    respHeaders.set("Content-Disposition", disposition);
+    respHeaders.set("Content-Type", mimeType);
+    respHeaders.set("Accept-Ranges", "bytes");
+    respHeaders.set("Access-Control-Allow-Origin", "*");
+    respHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    respHeaders.set(
+      "Access-Control-Expose-Headers",
+      "Content-Length, Content-Range, Accept-Ranges, Content-Disposition, Content-Type"
+    );
+    respHeaders.set("X-Accelerated-By", "Cloudflare Workers Edge (GDI Proxy)");
+    respHeaders.set("Cache-Control", "public, max-age=3600");
+
+    if (gdriveResp.headers.has("Content-Length")) {
+      respHeaders.set("Content-Length", gdriveResp.headers.get("Content-Length")!);
+    } else if (meta?.size) {
+      respHeaders.set("Content-Length", String(meta.size));
+    }
+
+    if (gdriveResp.headers.has("Content-Range")) {
+      respHeaders.set("Content-Range", gdriveResp.headers.get("Content-Range")!);
+    }
+
+    return new Response(gdriveResp.body, {
+      status: gdriveResp.status,
+      statusText: gdriveResp.statusText,
+      headers: respHeaders,
+    });
+  } catch (err: any) {
+    return new Response(
+      JSON.stringify({
+        error: "Edge Download Proxy Error",
+        message: err?.message || String(err),
+        fileId,
+      }),
+      {
+        status: 502,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, _ctx?: unknown): Promise<Response> {
     const url = new URL(request.url);
+    const pathname = url.pathname;
 
     // ── CORS Preflight Handling ─────────────────────────────────────────────
     if (request.method === "OPTIONS") {
@@ -142,16 +336,52 @@ export default {
       });
     }
 
-    // ── Cloudflare Edge Download & Stream Proxy ─────────────────────────────
-    const isDownloadAspx = url.pathname === "/download.aspx";
-    const isProxyDownload = url.pathname === "/proxy/download";
+    const backendBase =
+      url.searchParams.get("backend") ||
+      env.DEFAULT_BACKEND_URL ||
+      "https://mild-leaf.nyc.boxd.sh";
+
+    // ── Route 1: Explicit Preview SPA Routes ────────────────────────────────
+    // /preview/:fileId or /preview/:fileId/:fileName or /file/... with ?view=1 or ?preview=1
+    const wantsPreview =
+      pathname.startsWith("/preview/") ||
+      url.searchParams.has("preview") ||
+      url.searchParams.has("view") ||
+      url.searchParams.get("a") === "view";
+
+    if (wantsPreview) {
+      return env.ASSETS.fetch(request);
+    }
+
+    // ── Route 2: Direct File Download Route (/file/:fileId or /file/:fileId/:fileName) ──
+    const fileMatch = pathname.match(/^\/file\/([^/]+)(?:\/(.*))?$/);
+    if (fileMatch) {
+      const fileId = fileMatch[1];
+      const fileName = fileMatch[2] ? decodeURIComponent(fileMatch[2]) : null;
+      const isInline = url.searchParams.get("inline") === "true";
+      const exportFmt = url.searchParams.get("fmt");
+
+      return streamGoogleDriveFile(
+        fileId,
+        fileName,
+        isInline,
+        exportFmt,
+        backendBase,
+        env,
+        request
+      );
+    }
+
+    // ── Route 3: /download.aspx or /proxy/download or /proxy/stream ─────────
+    const isDownloadAspx = pathname === "/download.aspx";
+    const isProxyDownload = pathname === "/proxy/download";
     const isProxyStream =
-      url.pathname.startsWith("/proxy/stream/") || url.pathname.startsWith("/api/proxy/stream/");
+      pathname.startsWith("/proxy/stream/") || pathname.startsWith("/api/proxy/stream/");
 
     if (isDownloadAspx || isProxyDownload || isProxyStream) {
       let fileId = url.searchParams.get("id") || url.searchParams.get("file");
       if (!fileId && isProxyStream) {
-        fileId = url.pathname.split("/").pop() || null;
+        fileId = pathname.split("/").pop() || null;
       }
 
       if (!fileId) {
@@ -168,197 +398,18 @@ export default {
       }
 
       const explicitName = url.searchParams.get("name");
-      const isInline = url.searchParams.get("inline") === "true";
+      const isInline = url.searchParams.get("inline") === "true" || isProxyStream;
       const exportFmt = url.searchParams.get("fmt");
-      const backendBase =
-        url.searchParams.get("backend") ||
-        env.DEFAULT_BACKEND_URL ||
-        "https://mild-leaf.nyc.boxd.sh";
 
-      const clientRange = request.headers.get("Range");
-
-      try {
-        let token = await getAccessToken(backendBase, env);
-        let meta = await fetchFileMetadata(fileId, token);
-
-        // If metadata fetch failed with 401, refresh token and retry
-        if (!meta) {
-          token = await getAccessToken(backendBase, env, true);
-          meta = await fetchFileMetadata(fileId, token);
-        }
-
-        const fileName = explicitName || meta?.name || `file_${fileId}`;
-        const mimeType = meta?.mimeType || "application/octet-stream";
-
-        // Handle Google Workspace documents (Docs, Sheets, Slides) via Export API
-        const exportEntry = GDOC_EXPORT_FORMATS[mimeType];
-        if (exportEntry) {
-          const targetFmt = exportFmt || exportEntry.ext;
-          const exportMime = exportEntry.mime;
-          const exportUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
-            fileId
-          )}/export?mimeType=${encodeURIComponent(exportMime)}`;
-
-          const exportResp = await fetch(exportUrl, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-
-          if (!exportResp.ok) {
-            const errText = await exportResp.text();
-            return new Response(
-              JSON.stringify({
-                error: `Failed to export Google Workspace file: ${errText}`,
-                status: exportResp.status,
-              }),
-              {
-                status: exportResp.status,
-                headers: {
-                  "Content-Type": "application/json",
-                  "Access-Control-Allow-Origin": "*",
-                },
-              }
-            );
-          }
-
-          const exportFileName = fileName.endsWith(`.${targetFmt}`)
-            ? fileName
-            : `${fileName}.${targetFmt}`;
-          const safeExportName = encodeURIComponent(exportFileName);
-
-          const exportHeaders = new Headers(exportResp.headers);
-          exportHeaders.set(
-            "Content-Disposition",
-            isInline
-              ? "inline"
-              : `attachment; filename="${safeExportName}"; filename*=UTF-8''${safeExportName}`
-          );
-          exportHeaders.set("Content-Type", exportMime);
-          exportHeaders.set("Access-Control-Allow-Origin", "*");
-          exportHeaders.set("Cache-Control", "public, max-age=3600");
-
-          return new Response(exportResp.body, {
-            status: 200,
-            headers: exportHeaders,
-          });
-        }
-
-        // Direct Google Drive API v3 alt=media binary streaming (GDI architecture)
-        const gdriveMediaUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
-          fileId
-        )}?alt=media&supportsAllDrives=true`;
-
-        const driveHeaders: Record<string, string> = {
-          Authorization: `Bearer ${token}`,
-        };
-        if (clientRange) {
-          driveHeaders["Range"] = clientRange;
-        }
-
-        let gdriveResp = await fetch(gdriveMediaUrl, {
-          method: "GET",
-          headers: driveHeaders,
-        });
-
-        // If 401 Unauthorized, refresh token and retry once
-        if (gdriveResp.status === 401) {
-          token = await getAccessToken(backendBase, env, true);
-          driveHeaders["Authorization"] = `Bearer ${token}`;
-          gdriveResp = await fetch(gdriveMediaUrl, {
-            method: "GET",
-            headers: driveHeaders,
-          });
-        }
-
-        // If Google Drive returned an error status (e.g. 404, 403)
-        if (!gdriveResp.ok && gdriveResp.status !== 206) {
-          const errBody = await gdriveResp.text();
-
-          // Graceful fallback to backend stream endpoint if direct edge fetch failed
-          const fallbackUrl = `${backendBase.replace(/\/+$/, "")}/api/v1/drive/stream/${encodeURIComponent(fileId)}`;
-          const fallbackHeaders: Record<string, string> = {};
-          if (clientRange) fallbackHeaders["Range"] = clientRange;
-
-          const backendResp = await fetch(fallbackUrl, {
-            headers: fallbackHeaders,
-          });
-
-          if (backendResp.ok || backendResp.status === 206) {
-            const fbHeaders = new Headers(backendResp.headers);
-            fbHeaders.set("Access-Control-Allow-Origin", "*");
-            fbHeaders.set("X-Stream-Source", "Backend-Fallback");
-            return new Response(backendResp.body, {
-              status: backendResp.status,
-              headers: fbHeaders,
-            });
-          }
-
-          // Return structured JSON error instead of corrupt HTML
-          return new Response(
-            JSON.stringify({
-              error: `Google Drive API error (${gdriveResp.status})`,
-              details: errBody.substring(0, 500),
-              fileId,
-            }),
-            {
-              status: gdriveResp.status,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              },
-            }
-          );
-        }
-
-        // Build accelerated edge streaming response
-        const safeName = encodeURIComponent(fileName);
-        const disposition = isInline
-          ? "inline"
-          : `attachment; filename="${safeName}"; filename*=UTF-8''${safeName}`;
-
-        const respHeaders = new Headers();
-        respHeaders.set("Content-Disposition", disposition);
-        respHeaders.set("Content-Type", mimeType);
-        respHeaders.set("Accept-Ranges", "bytes");
-        respHeaders.set("Access-Control-Allow-Origin", "*");
-        respHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-        respHeaders.set(
-          "Access-Control-Expose-Headers",
-          "Content-Length, Content-Range, Accept-Ranges, Content-Disposition, Content-Type"
-        );
-        respHeaders.set("X-Accelerated-By", "Cloudflare Workers Edge (GDI Proxy)");
-        respHeaders.set("Cache-Control", "public, max-age=3600");
-
-        if (gdriveResp.headers.has("Content-Length")) {
-          respHeaders.set("Content-Length", gdriveResp.headers.get("Content-Length")!);
-        } else if (meta?.size) {
-          respHeaders.set("Content-Length", String(meta.size));
-        }
-
-        if (gdriveResp.headers.has("Content-Range")) {
-          respHeaders.set("Content-Range", gdriveResp.headers.get("Content-Range")!);
-        }
-
-        return new Response(gdriveResp.body, {
-          status: gdriveResp.status,
-          statusText: gdriveResp.statusText,
-          headers: respHeaders,
-        });
-      } catch (err: any) {
-        return new Response(
-          JSON.stringify({
-            error: "Edge Download Proxy Error",
-            message: err?.message || String(err),
-            fileId,
-          }),
-          {
-            status: 502,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          }
-        );
-      }
+      return streamGoogleDriveFile(
+        fileId,
+        explicitName,
+        isInline,
+        exportFmt,
+        backendBase,
+        env,
+        request
+      );
     }
 
     // ── Default: Serve Single Page Application (SPA) Static Assets ──────────

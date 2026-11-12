@@ -51,9 +51,18 @@ export function useDriveFileMeta(fileId?: string) {
   const api = useDriveApi();
   const instance = useActiveInstance();
   return useQuery({
-    queryKey: ["drive-file-meta", instance?.id, fileId],
-    queryFn: () => api!.getFileMeta(fileId!),
-    enabled: !!api && !!fileId,
+    queryKey: ["drive-file-meta", instance?.id || "fallback", fileId],
+    queryFn: async () => {
+      if (api) {
+        return api.getFileMeta(fileId!);
+      }
+      const resp = await fetch(
+        `https://mild-leaf.nyc.boxd.sh/api/v1/drive/files/${encodeURIComponent(fileId!)}/meta`
+      );
+      if (!resp.ok) throw new Error("Gagal memuat metadata file");
+      return resp.json();
+    },
+    enabled: !!fileId,
     retry: 1,
   });
 }
