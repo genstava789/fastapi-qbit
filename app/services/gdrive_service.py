@@ -42,6 +42,18 @@ class UploadState:
 class GDriveService:
     def __init__(self) -> None:
         self._uploads: Dict[str, UploadState] = {}
+        self._root_folder_id: Optional[str] = None
+
+    def _get_root_folder_id(self, service: Any) -> Optional[str]:
+        """Resolve and cache the Google Drive My Drive root folder ID."""
+        if self._root_folder_id:
+            return self._root_folder_id
+        try:
+            root_meta = service.files().get(fileId="root", fields="id").execute()
+            self._root_folder_id = root_meta.get("id")
+        except Exception as e:
+            logger.debug(f"Could not resolve root folder ID: {e}")
+        return self._root_folder_id
 
     def _get_credentials_path(self) -> str:
         if os.path.exists(CREDENTIALS_FILE):
@@ -141,9 +153,13 @@ class GDriveService:
     def list_files(
         self, folder_id: str = "root", page_token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """List files/folders in a Drive folder."""
+        """List files/folders in a Drive folder along with folder hierarchy metadata."""
         service = self._build_service()
-        query = f"'{folder_id}' in parents and trashed = false"
+        root_id = self._get_root_folder_id(service)
+        is_root = not folder_id or folder_id == "root" or (root_id is not None and folder_id == root_id)
+        effective_folder_id = "root" if is_root else folder_id
+
+        query = f"'{effective_folder_id}' in parents and trashed = false"
         results = (
             service.files()
             .list(
@@ -155,9 +171,23 @@ class GDriveService:
             )
             .execute()
         )
+
+        if is_root:
+            breadcrumbs: List[Dict[str, str]] = []
+            current_folder_name = "My Drive"
+            parent_id: Optional[str] = None
+        else:
+            breadcrumbs = self._build_folder_path(service, effective_folder_id, root_id)
+            current_folder_name = breadcrumbs[-1]["name"] if breadcrumbs else "Folder"
+            parent_id = breadcrumbs[-2]["id"] if len(breadcrumbs) >= 2 else "root"
+
         return {
             "files": results.get("files", []),
             "nextPageToken": results.get("nextPageToken"),
+            "currentFolderId": effective_folder_id,
+            "currentFolderName": current_folder_name,
+            "parentId": parent_id,
+            "breadcrumbs": breadcrumbs,
         }
 
     def get_storage_quota(self) -> Dict[str, Any]:
@@ -505,26 +535,43 @@ class GDriveService:
             del self._uploads[uid]
         return len(to_delete)
 
-    def get_folder_path(self, folder_id: str) -> List[Dict[str, str]]:
-        """Build breadcrumb path from folder_id up to root."""
-        service = self._build_service()
-        path: List[Dict[str, str]] = []
-        current_id = folder_id
+    def _build_folder_path(
+        self, service: Any, folder_id: str, root_id: Optional[str] = None
+    ) -> List[Dict[str, str]]:
+        """Build breadcrumb path from folder_id up to (but excluding) My Drive root."""
+        if not folder_id or folder_id == "root" or (root_id and folder_id == root_id):
+            return []
 
-        while current_id:
+        path: List[Dict[str, str]] = []
+        current_id: Optional[str] = folder_id
+        visited = set()
+
+        while current_id and current_id not in visited:
+            if current_id == "root" or (root_id and current_id == root_id):
+                break
+            visited.add(current_id)
             try:
                 file_meta = (
                     service.files()
                     .get(fileId=current_id, fields="id, name, parents")
                     .execute()
                 )
-                path.insert(0, {"id": file_meta["id"], "name": file_meta["name"]})
                 parents = file_meta.get("parents")
+                if not parents and file_meta.get("name") == "My Drive":
+                    self._root_folder_id = file_meta["id"]
+                    break
+                path.insert(0, {"id": file_meta["id"], "name": file_meta["name"]})
                 current_id = parents[0] if parents else None
             except Exception:
                 break
 
         return path
+
+    def get_folder_path(self, folder_id: str) -> List[Dict[str, str]]:
+        """Build breadcrumb path from folder_id up to root."""
+        service = self._build_service()
+        root_id = self._get_root_folder_id(service)
+        return self._build_folder_path(service, folder_id, root_id)
 
     def download_file_url(self, file_id: str) -> str:
         """Generate webContentLink or export link for a file."""
@@ -550,10 +597,23 @@ class GDriveService:
         return f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
 
     def get_file_metadata(self, file_id: str) -> Dict[str, Any]:
-        """Fetch metadata for a single Google Drive file or folder."""
+        """Fetch metadata for a single Google Drive file or folder, including parent hierarchy."""
         service = self._build_service()
+        root_id = self._get_root_folder_id(service)
         fields = "id, name, mimeType, size, modifiedTime, createdTime, md5Checksum, webContentLink, webViewLink, thumbnailLink, parents, iconLink"
         item = service.files().get(fileId=file_id, fields=fields).execute()
+        raw_parents = item.get("parents", [])
+        normalized_parents = [
+            "root" if (root_id and p == root_id) else p for p in raw_parents
+        ]
+        raw_parent = normalized_parents[0] if normalized_parents else None
+        if raw_parent and raw_parent != "root":
+            breadcrumbs = self._build_folder_path(service, raw_parent, root_id)
+            parent_id = breadcrumbs[-1]["id"] if breadcrumbs else "root"
+        else:
+            breadcrumbs = []
+            parent_id = "root" if raw_parent == "root" else None
+
         return {
             "id": item["id"],
             "name": item["name"],
@@ -565,7 +625,9 @@ class GDriveService:
             "webContentLink": item.get("webContentLink"),
             "webViewLink": item.get("webViewLink"),
             "thumbnailLink": item.get("thumbnailLink"),
-            "parents": item.get("parents", []),
+            "parents": normalized_parents,
+            "parentId": parent_id,
+            "breadcrumbs": breadcrumbs,
             "iconLink": item.get("iconLink"),
         }
 
@@ -617,6 +679,7 @@ class GDriveService:
 
     def logout(self) -> None:
         """Delete token.json to log out."""
+        self._root_folder_id = None
         if os.path.exists(TOKEN_FILE):
             try:
                 os.remove(TOKEN_FILE)

@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import {
   useDriveFileMeta,
+  useDriveBreadcrumb,
   useDriveApi,
   useDriveAuthStatus,
   useDeleteDriveFile,
@@ -9,6 +10,7 @@ import {
 import { formatBytes, formatCompactDate } from "@/lib/utils";
 import { UI_STRINGS } from "@/lib/strings";
 import { Skeleton, Badge } from "@/components/ui";
+import type { DriveBreadcrumb } from "@/types";
 import {
   ArrowLeft,
   Download,
@@ -107,11 +109,57 @@ function getHeroIcon(category: string) {
 export function FilePreviewPage() {
   const { fileId, fileName } = useParams<{ fileId: string; fileName?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const api = useDriveApi();
+
+  const navState = location.state as {
+    fromFolderId?: string;
+    fromFolderName?: string;
+  } | null;
 
   const { data: authStatus } = useDriveAuthStatus();
   const { data: file, isLoading, error } = useDriveFileMeta(fileId);
   const deleteMutation = useDeleteDriveFile();
+
+  const rawParentId = file?.parentId ?? file?.parents?.[0] ?? navState?.fromFolderId;
+  const shouldFetchParentPath =
+    Boolean(api) &&
+    !file?.breadcrumbs &&
+    Boolean(rawParentId) &&
+    rawParentId !== "root";
+
+  const { data: breadcrumbData } = useDriveBreadcrumb(
+    shouldFetchParentPath ? rawParentId : undefined
+  );
+
+  const parentBreadcrumbs = useMemo<DriveBreadcrumb[]>(() => {
+    const source: DriveBreadcrumb[] = file?.breadcrumbs ?? breadcrumbData ?? [];
+    return source.filter(
+      (c, idx) => !(idx === 0 && (c.id === "root" || c.name === "My Drive"))
+    );
+  }, [file?.breadcrumbs, breadcrumbData]);
+
+  const resolvedParentId = useMemo(() => {
+    if (parentBreadcrumbs.length > 0) {
+      return parentBreadcrumbs[parentBreadcrumbs.length - 1].id;
+    }
+    if (rawParentId && rawParentId !== "root" && !breadcrumbData && !file?.breadcrumbs) {
+      return rawParentId;
+    }
+    return undefined;
+  }, [parentBreadcrumbs, rawParentId, breadcrumbData, file?.breadcrumbs]);
+
+  const backToDriveUrl = resolvedParentId
+    ? `/drive?folder=${encodeURIComponent(resolvedParentId)}`
+    : "/drive";
+
+  const backToDriveState = useMemo(() => {
+    const folderName =
+      parentBreadcrumbs.length > 0
+        ? parentBreadcrumbs[parentBreadcrumbs.length - 1].name
+        : navState?.fromFolderName;
+    return folderName && resolvedParentId ? { folderName } : undefined;
+  }, [parentBreadcrumbs, navState?.fromFolderName, resolvedParentId]);
 
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedDownloadUrl, setCopiedDownloadUrl] = useState(false);
@@ -165,7 +213,7 @@ export function FilePreviewPage() {
     deleteMutation.mutate(file.id, {
       onSuccess: () => {
         setDeleteConfirmOpen(false);
-        navigate("/drive", { replace: true });
+        navigate(backToDriveUrl, { replace: true, state: backToDriveState });
       },
     });
   };
@@ -206,20 +254,20 @@ export function FilePreviewPage() {
 
   return (
     <div className="space-y-4 sm:space-y-5 max-w-5xl mx-auto">
-      {/* ── Top Bar: Back, Breadcrumb, Title & Secondary Actions (Share, Open in Drive, Delete) ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      {/* ── Top Bar: Back, Parent Breadcrumb, Full Title & Secondary Actions (Share, Open in Drive, Delete) ── */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => navigate(-1)}
-            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors flex-shrink-0"
+            onClick={() => navigate(backToDriveUrl, { state: backToDriveState })}
+            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors flex-shrink-0 mt-0.5"
             title={S.backTitle}
             aria-label={S.backAria}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 min-w-0">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 min-w-0 flex-wrap">
               <Link
                 to="/drive"
                 className="text-xs text-text-muted hover:text-accent transition-colors flex items-center gap-1 flex-shrink-0"
@@ -227,12 +275,38 @@ export function FilePreviewPage() {
                 <FolderOpen className="w-3.5 h-3.5" />
                 <span>{S.driveBreadcrumb}</span>
               </Link>
-              <span className="text-text-muted flex-shrink-0">/</span>
-              <span className="text-xs text-text-secondary truncate">
-                {displayName}
-              </span>
-            </div>
-            <h1 className="text-base sm:text-xl font-bold text-text-primary truncate mt-0.5">
+              {parentBreadcrumbs.length > 0 ? (
+                parentBreadcrumbs.map((crumb, index) => (
+                  <div key={crumb.id} className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-text-muted text-xs flex-shrink-0">/</span>
+                    <Link
+                      to={`/drive?folder=${encodeURIComponent(crumb.id)}`}
+                      state={{ folderName: crumb.name }}
+                      className={
+                        index === parentBreadcrumbs.length - 1
+                          ? "text-xs text-text-secondary hover:text-accent transition-colors truncate max-w-[180px] sm:max-w-xs font-medium"
+                          : "text-xs text-text-muted hover:text-accent transition-colors truncate max-w-[140px]"
+                      }
+                      title={crumb.name}
+                    >
+                      {crumb.name}
+                    </Link>
+                  </div>
+                ))
+              ) : resolvedParentId && navState?.fromFolderName ? (
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-text-muted text-xs flex-shrink-0">/</span>
+                  <Link
+                    to={`/drive?folder=${encodeURIComponent(resolvedParentId)}`}
+                    state={{ folderName: navState.fromFolderName }}
+                    className="text-xs text-text-secondary hover:text-accent transition-colors truncate max-w-[180px] sm:max-w-xs font-medium"
+                  >
+                    {navState.fromFolderName}
+                  </Link>
+                </div>
+              ) : null}
+            </nav>
+            <h1 className="text-base sm:text-xl font-bold text-text-primary line-clamp-2 break-words [overflow-wrap:anywhere] leading-snug mt-1">
               {displayName}
             </h1>
           </div>

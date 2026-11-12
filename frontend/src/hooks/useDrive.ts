@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DriveApi } from "@/api/client";
 import { useActiveInstance } from "@/hooks/useTorrents";
 import { useAppStore } from "@/stores/appStore";
+import type { DriveFileItem } from "@/types";
 import toast from "react-hot-toast";
 
 export function useDriveApi() {
@@ -28,9 +29,10 @@ export function useDriveAuthStatus() {
 export function useDriveFiles(folderId?: string, enabled: boolean = true) {
   const api = useDriveApi();
   const instance = useActiveInstance();
+  const normalizedFolderId = folderId || "root";
   return useQuery({
-    queryKey: ["drive-files", instance?.id, folderId],
-    queryFn: () => api!.listFiles(folderId),
+    queryKey: ["drive-files", instance?.id, normalizedFolderId],
+    queryFn: () => api!.listFiles(normalizedFolderId),
     enabled: !!api && enabled,
     retry: false,
   });
@@ -42,7 +44,7 @@ export function useDriveBreadcrumb(folderId?: string) {
   return useQuery({
     queryKey: ["drive-breadcrumb", instance?.id, folderId],
     queryFn: () => api!.getFolderPath(folderId!),
-    enabled: !!api && !!folderId,
+    enabled: !!api && !!folderId && folderId !== "root",
     retry: false,
   });
 }
@@ -50,9 +52,9 @@ export function useDriveBreadcrumb(folderId?: string) {
 export function useDriveFileMeta(fileId?: string) {
   const api = useDriveApi();
   const instance = useActiveInstance();
-  return useQuery({
+  return useQuery<DriveFileItem>({
     queryKey: ["drive-file-meta", instance?.id || "fallback", fileId],
-    queryFn: async () => {
+    queryFn: async (): Promise<DriveFileItem> => {
       if (api) {
         return api.getFileMeta(fileId!);
       }
@@ -60,7 +62,7 @@ export function useDriveFileMeta(fileId?: string) {
         `https://mild-leaf.nyc.boxd.sh/api/v1/drive/files/${encodeURIComponent(fileId!)}/meta`
       );
       if (!resp.ok) throw new Error("Failed to load file metadata");
-      return resp.json();
+      return resp.json() as Promise<DriveFileItem>;
     },
     enabled: !!fileId,
     retry: 1,

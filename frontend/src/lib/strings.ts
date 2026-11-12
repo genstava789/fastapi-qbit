@@ -102,9 +102,9 @@ export const UI_STRINGS = {
   },
   filePreview: {
     fallbackTitle: "File Preview",
-    backTitle: "Back",
-    backAria: "Back",
-    driveBreadcrumb: "Google Drive",
+    backTitle: "Back to folder",
+    backAria: "Back to folder",
+    driveBreadcrumb: "My Drive",
     notFoundTitle: "File Not Found",
     notFoundDescription:
       "Unable to load file metadata from Google Drive. Make sure the file exists and your Drive account is connected.",

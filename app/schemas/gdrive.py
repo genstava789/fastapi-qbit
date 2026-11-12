@@ -13,6 +13,11 @@ class DriveAuthCodeRequest(BaseModel):
     redirect_uri: Optional[str] = Field(default=None, description="Optional redirect URI used during auth.")
 
 
+class DriveBreadcrumb(BaseModel):
+    id: str
+    name: str
+
+
 class DriveFileItem(BaseModel):
     id: str
     name: str
@@ -20,11 +25,17 @@ class DriveFileItem(BaseModel):
     size: Optional[int] = None
     modifiedTime: Optional[str] = None
     parents: Optional[List[str]] = None
+    parentId: Optional[str] = None
+    breadcrumbs: Optional[List[DriveBreadcrumb]] = None
 
 
 class DriveListResponse(BaseModel):
     files: List[DriveFileItem]
     nextPageToken: Optional[str] = None
+    currentFolderId: str = "root"
+    currentFolderName: str = "My Drive"
+    parentId: Optional[str] = None
+    breadcrumbs: List[DriveBreadcrumb] = Field(default_factory=list)
 
 
 class DriveStorageQuota(BaseModel):
@@ -66,11 +77,6 @@ class DriveUploadProgress(BaseModel):
 class DriveCreateFolderRequest(BaseModel):
     name: str = Field(..., description="Name of the folder to create.")
     parent_id: str = Field(default="root", description="Parent folder ID in Google Drive.")
-
-
-class DriveBreadcrumb(BaseModel):
-    id: str
-    name: str
 
 
 class DriveDefaultPathRequest(BaseModel):

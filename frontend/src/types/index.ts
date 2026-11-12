@@ -112,11 +112,17 @@ export interface DriveFileItem {
   size: number | null;
   modifiedTime: string | null;
   parents: string[] | null;
+  parentId?: string | null;
+  breadcrumbs?: DriveBreadcrumb[] | null;
 }
 
 export interface DriveListResponse {
   files: DriveFileItem[];
   nextPageToken: string | null;
+  currentFolderId?: string;
+  currentFolderName?: string;
+  parentId?: string | null;
+  breadcrumbs?: DriveBreadcrumb[];
 }
 
 export interface DriveStorageQuota {

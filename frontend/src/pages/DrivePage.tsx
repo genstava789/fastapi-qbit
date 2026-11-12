@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useSearchParams, useParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   useDriveApi,
   useDriveAuthStatus,
@@ -112,13 +112,22 @@ export function DrivePage() {
   const instance = useActiveInstance();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Read current folder directly from route parameter or URL query param
+  // Single Source of Truth: derive folderId directly from URL params/query (?folder=...)
   const { folderId: routeFolderId } = useParams<{ folderId?: string }>();
-  const currentFolderId = routeFolderId || searchParams.get("folder") || undefined;
+  const folderId = (routeFolderId || searchParams.get("folder") || "root").trim() || "root";
+  const isRootFolder = folderId === "root";
+  const locationFolderName = (location.state as { folderName?: string } | null)?.folderName;
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchState, setSearchState] = useState<{ folderId: string; query: string }>({
+    folderId,
+    query: "",
+  });
+  const searchQuery = searchState.folderId === folderId ? searchState.query : "";
+  const setSearchQuery = (query: string) => setSearchState({ folderId, query });
+
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -131,9 +140,33 @@ export function DrivePage() {
   const [itemToDelete, setItemToDelete] = useState<DriveFileItem | null>(null);
   const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false);
 
-  // Multi-select state
-  const [isSelectMode, setIsSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Multi-select state scoped to active URL folderId (resets automatically on navigation)
+  const [selectionState, setSelectionState] = useState<{
+    folderId: string;
+    active: boolean;
+    ids: Set<string>;
+  }>({ folderId, active: false, ids: new Set() });
+  const isSelectMode = selectionState.folderId === folderId && selectionState.active;
+  const selectedIds = useMemo(
+    () => (selectionState.folderId === folderId ? selectionState.ids : new Set<string>()),
+    [selectionState, folderId]
+  );
+  const setIsSelectMode = (active: boolean) =>
+    setSelectionState((prev) => ({
+      folderId,
+      active,
+      ids: prev.folderId === folderId ? prev.ids : new Set(),
+    }));
+  const setSelectedIds = (updater: Set<string> | ((prev: Set<string>) => Set<string>)) =>
+    setSelectionState((prev) => {
+      const currentIds = prev.folderId === folderId ? prev.ids : new Set<string>();
+      const nextIds = typeof updater === "function" ? updater(currentIds) : updater;
+      return {
+        folderId,
+        active: prev.folderId === folderId ? prev.active : false,
+        ids: nextIds,
+      };
+    });
 
   // Sort & View state
   const [sortField, setSortField] = useState<SortField>("name");
@@ -179,10 +212,10 @@ export function DrivePage() {
     isError: filesError,
     error: filesErrorObj,
     refetch: refetchFiles,
-  } = useDriveFiles(currentFolderId, isAuthenticated);
+  } = useDriveFiles(folderId, isAuthenticated);
 
-  const { data: breadcrumb } = useDriveBreadcrumb(
-    isAuthenticated ? currentFolderId : undefined
+  const { data: breadcrumbData, isFetching: breadcrumbFetching } = useDriveBreadcrumb(
+    isAuthenticated && !isRootFolder ? folderId : undefined
   );
 
   const createFolder = useCreateDriveFolder();
@@ -190,14 +223,24 @@ export function DrivePage() {
   const renameMutation = useRenameDriveFile();
   const batchDeleteMutation = useBatchDeleteDriveFiles();
 
-  // Reset multi-select, select mode, and search when folder changes
-  const [prevFolderId, setPrevFolderId] = useState(currentFolderId);
-  if (prevFolderId !== currentFolderId) {
-    setPrevFolderId(currentFolderId);
-    setSelectedIds(new Set());
-    setIsSelectMode(false);
-    setSearchQuery("");
-  }
+  const normalizedBreadcrumbs = useMemo(() => {
+    if (isRootFolder) return [];
+    const source = filesData?.breadcrumbs ?? breadcrumbData ?? [];
+    return source.filter(
+      (c, idx) => !(idx === 0 && (c.id === "root" || c.name === "My Drive"))
+    );
+  }, [isRootFolder, filesData, breadcrumbData]);
+
+  const currentFolderName = useMemo(() => {
+    if (isRootFolder) return S.myDrive;
+    if (normalizedBreadcrumbs.length > 0) {
+      return normalizedBreadcrumbs[normalizedBreadcrumbs.length - 1].name;
+    }
+    if (filesData?.currentFolderName && filesData.currentFolderName !== "My Drive") {
+      return filesData.currentFolderName;
+    }
+    return locationFolderName;
+  }, [isRootFolder, normalizedBreadcrumbs, filesData, locationFolderName]);
 
   // Auto scroll breadcrumb to the right end when breadcrumb updates
   useEffect(() => {
@@ -207,20 +250,30 @@ export function DrivePage() {
         behavior: "smooth",
       });
     }
-  }, [breadcrumb, currentFolderId]);
+  }, [normalizedBreadcrumbs, folderId]);
 
-  const navigateToFolder = (folderId?: string) => {
-    if (folderId) {
-      setSearchParams({ folder: folderId });
+  const navigateToFolder = (nextFolderId?: string, nextFolderName?: string) => {
+    if (!nextFolderId || nextFolderId === "root") {
+      if (routeFolderId) {
+        navigate("/drive");
+      } else {
+        setSearchParams({});
+      }
+      return;
+    }
+
+    const navState = nextFolderName ? { folderName: nextFolderName } : undefined;
+    if (routeFolderId) {
+      navigate(`/drive?folder=${encodeURIComponent(nextFolderId)}`, { state: navState });
     } else {
-      setSearchParams({});
+      setSearchParams({ folder: nextFolderId }, { state: navState });
     }
   };
 
   const handleCreateFolder = () => {
     if (!newFolderName.trim()) return;
     createFolder.mutate(
-      { name: newFolderName.trim(), parentId: currentFolderId },
+      { name: newFolderName.trim(), parentId: isRootFolder ? undefined : folderId },
       {
         onSuccess: () => {
           setNewFolderName("");
@@ -236,7 +289,12 @@ export function DrivePage() {
   };
 
   const handlePreview = (file: DriveFileItem) => {
-    navigate(`/file/${file.id}/${encodeURIComponent(file.name)}`);
+    navigate(`/file/${file.id}/${encodeURIComponent(file.name)}`, {
+      state: {
+        fromFolderId: isRootFolder ? undefined : folderId,
+        fromFolderName: isRootFolder ? undefined : currentFolderName,
+      },
+    });
   };
 
   const handleStartRename = (file: DriveFileItem) => {
@@ -348,17 +406,19 @@ export function DrivePage() {
   };
 
   // Up to parent folder logic
-  const parentFolderCrumb = useMemo(() => {
-    if (!breadcrumb || breadcrumb.length <= 1) return null;
-    return breadcrumb[breadcrumb.length - 2];
-  }, [breadcrumb]);
+  const parentFolderTarget = useMemo(() => {
+    if (isRootFolder) return undefined;
+    if (filesData?.parentId) {
+      return filesData.parentId === "root" ? undefined : filesData.parentId;
+    }
+    if (normalizedBreadcrumbs.length >= 2) {
+      return normalizedBreadcrumbs[normalizedBreadcrumbs.length - 2].id;
+    }
+    return undefined;
+  }, [isRootFolder, filesData, normalizedBreadcrumbs]);
 
   const handleGoUp = () => {
-    if (parentFolderCrumb) {
-      navigateToFolder(parentFolderCrumb.id);
-    } else {
-      navigateToFolder(undefined);
-    }
+    navigateToFolder(parentFolderTarget);
   };
 
   if (authLoading) {
@@ -472,13 +532,14 @@ export function DrivePage() {
       <div className="sticky top-14 z-20 bg-surface/95 backdrop-blur-xl border-y border-glass-border py-2 space-y-2 -mx-4 px-4 sm:-mx-6 sm:px-6">
         {/* Full-width horizontally scrollable breadcrumb */}
         <div className="flex items-center gap-1.5 min-w-0">
-          {/* Back/Up button if inside a subfolder */}
-          {currentFolderId && (
+          {/* Back/Up button ONLY when inside a sub-folder (hidden at My Drive root) */}
+          {!isRootFolder && (
             <button
               type="button"
               onClick={handleGoUp}
               className="flex items-center gap-1 min-h-[30px] px-2 rounded-lg bg-surface-elevated border border-glass-border text-text-secondary hover:text-text-primary hover:bg-glass-hover transition-colors flex-shrink-0 text-xs font-medium"
               title={S.upTitle}
+              aria-label={S.upTitle}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span className="hidden xs:inline">{S.upLabel}</span>
@@ -495,7 +556,7 @@ export function DrivePage() {
               onClick={() => navigateToFolder(undefined)}
               className={cn(
                 "flex items-center gap-1.5 min-h-[30px] px-2.5 rounded-lg font-medium transition-colors flex-shrink-0",
-                !currentFolderId
+                isRootFolder
                   ? "bg-accent/15 text-accent border border-accent/25"
                   : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
               )}
@@ -504,27 +565,40 @@ export function DrivePage() {
               <span>{S.myDrive}</span>
             </button>
 
-            {breadcrumb?.map((crumb) => {
-              const isCurrent = currentFolderId === crumb.id;
-              return (
-                <div key={crumb.id} className="flex items-center gap-1 flex-shrink-0">
-                  <ChevronRight className="w-3.5 h-3.5 text-text-muted flex-shrink-0 opacity-60" />
-                  <button
-                    type="button"
-                    onClick={() => navigateToFolder(crumb.id)}
-                    className={cn(
-                      "min-h-[30px] px-2.5 rounded-lg font-medium transition-colors whitespace-nowrap flex-shrink-0 max-w-[220px] sm:max-w-[320px] truncate",
-                      isCurrent
-                        ? "bg-accent/15 text-accent border border-accent/25"
-                        : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
-                    )}
-                    title={crumb.name}
-                  >
-                    {crumb.name}
-                  </button>
-                </div>
-              );
-            })}
+            {!isRootFolder && normalizedBreadcrumbs.length > 0 ? (
+              normalizedBreadcrumbs.map((crumb) => {
+                const isCurrent = folderId === crumb.id;
+                return (
+                  <div key={crumb.id} className="flex items-center gap-1 flex-shrink-0">
+                    <ChevronRight className="w-3.5 h-3.5 text-text-muted flex-shrink-0 opacity-60" />
+                    <button
+                      type="button"
+                      onClick={() => navigateToFolder(crumb.id, crumb.name)}
+                      className={cn(
+                        "min-h-[30px] px-2.5 rounded-lg font-medium transition-colors whitespace-nowrap flex-shrink-0 max-w-[220px] sm:max-w-[320px] truncate",
+                        isCurrent
+                          ? "bg-accent/15 text-accent border border-accent/25"
+                          : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
+                      )}
+                      title={crumb.name}
+                    >
+                      {crumb.name}
+                    </button>
+                  </div>
+                );
+              })
+            ) : !isRootFolder ? (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <ChevronRight className="w-3.5 h-3.5 text-text-muted flex-shrink-0 opacity-60" />
+                {currentFolderName ? (
+                  <span className="min-h-[30px] px-2.5 rounded-lg font-medium bg-accent/15 text-accent border border-accent/25 flex items-center whitespace-nowrap max-w-[220px] sm:max-w-[320px] truncate">
+                    {currentFolderName}
+                  </span>
+                ) : breadcrumbFetching || filesFetching ? (
+                  <span className="h-[30px] w-24 rounded-lg bg-surface-elevated animate-pulse inline-block" />
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -766,7 +840,7 @@ export function DrivePage() {
                       if (isSelectMode) {
                         toggleSelect(folder.id);
                       } else {
-                        navigateToFolder(folder.id);
+                        navigateToFolder(folder.id, folder.name);
                       }
                     }}
                     className={cn(
@@ -929,7 +1003,7 @@ export function DrivePage() {
                       if (isSelectMode) {
                         toggleSelect(folder.id);
                       } else {
-                        navigateToFolder(folder.id);
+                        navigateToFolder(folder.id, folder.name);
                       }
                     }}
                     className={cn(
