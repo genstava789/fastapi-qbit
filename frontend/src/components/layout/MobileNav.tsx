@@ -47,7 +47,7 @@ export function MobileBottomNav() {
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-glass-border bg-surface/98 backdrop-blur-xl"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <div className="grid grid-cols-5 h-16">
+      <div className="grid grid-cols-5 h-14">
         {bottomNavItems.map(({ path, icon: Icon, label }) => {
           const isItemActive = (isActive: boolean) =>
             isActive || (path === "/drive" && location.pathname.startsWith("/drive"));
@@ -59,7 +59,7 @@ export function MobileBottomNav() {
               onClick={() => setMobileMenuOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  "flex flex-col items-center justify-center gap-1 min-h-[44px] text-[11px] font-medium transition-colors",
+                  "flex flex-col items-center justify-center gap-0.5 min-h-[40px] text-[10px] font-medium transition-colors",
                   isItemActive(isActive)
                     ? "text-accent"
                     : "text-text-secondary hover:text-text-primary"
@@ -76,7 +76,7 @@ export function MobileBottomNav() {
                         active ? "bg-accent/15" : "bg-transparent"
                       )}
                     >
-                      <Icon className="w-5 h-5" />
+                      <Icon className="w-4.5 h-4.5" />
                     </div>
                     <span>{label}</span>
                   </>

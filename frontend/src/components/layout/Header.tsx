@@ -56,10 +56,10 @@ export function Header() {
   };
 
   const placeholder = isTorrentsRoute
-    ? "Search torrents..."
+    ? "Cari torrent..."
     : isFilesRoute
-    ? "Filter files & folders..."
-    : "Jump to torrent...";
+    ? "Filter file & folder..."
+    : "Cari torrent...";
 
   const quickMatches = useMemo(() => {
     if (isInlineFilterRoute || !searchQuery.trim() || !torrents) return [];
@@ -86,7 +86,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 bg-surface/95 backdrop-blur-xl border-b border-glass-border">
-      <div className="flex items-center justify-between gap-2 sm:gap-3 h-16 px-3 sm:px-6">
+      <div className="flex items-center justify-between gap-2 sm:gap-3 h-14 px-3 sm:px-6">
         {/* Mobile Hamburger */}
         <button
           type="button"
@@ -207,15 +207,17 @@ export function Header() {
             <span className="sr-only">Refresh</span>
           </Button>
 
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setAddTorrentModalOpen(true)}
-            className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 px-3"
-            icon={<Plus className="w-4 h-4" />}
-          >
-            <span className="hidden sm:inline">Add Torrent</span>
-          </Button>
+          {!isDriveRoute && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setAddTorrentModalOpen(true)}
+              className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 px-3"
+              icon={<Plus className="w-4 h-4" />}
+            >
+              <span className="hidden sm:inline">Add Torrent</span>
+            </Button>
+          )}
         </div>
       </div>
     </header>

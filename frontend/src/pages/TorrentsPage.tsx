@@ -22,6 +22,7 @@ import {
   Trash2,
   X,
   UploadCloud,
+  CheckSquare,
 } from "lucide-react";
 
 export function TorrentsPage() {
@@ -38,6 +39,7 @@ export function TorrentsPage() {
   const { data: driveAuth } = useDriveAuthStatus();
   const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
   const [batchUploadModalOpen, setBatchUploadModalOpen] = useState(false);
+  const [isSelectMode, setIsSelectMode] = useState(false);
 
   const filtered = useMemo(
     () => filterTorrents(torrents || [], torrentFilter),
@@ -54,6 +56,7 @@ export function TorrentsPage() {
   }, [torrents]);
 
   const selectedArray = Array.from(selectedTorrents);
+  const inSelectionMode = isSelectMode || selectedArray.length > 0;
 
   const selectedItems = useMemo(() => {
     if (!torrents || selectedArray.length === 0) return [];
@@ -97,7 +100,7 @@ export function TorrentsPage() {
   }
 
   return (
-    <div className="space-y-4 pb-6">
+    <div className="space-y-4">
       {/* Header Stats Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div>
@@ -139,74 +142,119 @@ export function TorrentsPage() {
       {/* Compact Filter Toolbar */}
       <TorrentToolbar />
 
-      {/* In-Flow Sticky Batch Action Bar (Never covers torrent cards) */}
-      {selectedArray.length > 0 && (
-        <div className="sticky top-[68px] z-30 bg-surface-elevated border border-accent/40 rounded-2xl p-2.5 sm:px-4 shadow-xl flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 pl-1">
-            <span className="inline-flex items-center justify-center min-w-[26px] h-6 px-2 rounded-lg bg-accent text-white text-xs font-bold">
-              {selectedArray.length}
+      {/* Mode Controls: Normal [Pilih] Button vs Active Select Mode Bar */}
+      {inSelectionMode ? (
+        /* In-Flow Sticky Batch Action Bar */
+        <div className="sticky top-[68px] z-30 bg-surface-elevated border border-accent/40 rounded-2xl p-2.5 sm:px-4 shadow-xl flex flex-wrap items-center justify-between gap-2 animate-fadeIn">
+          <label className="flex items-center gap-2 pl-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={
+                filtered.length > 0 &&
+                filtered.every((t) => selectedTorrents.has(t.hash))
+              }
+              onChange={() => {
+                const allSelected =
+                  filtered.length > 0 &&
+                  filtered.every((t) => selectedTorrents.has(t.hash));
+                if (allSelected) {
+                  clearSelection();
+                } else {
+                  useAppStore
+                    .getState()
+                    .selectAllTorrents(filtered.map((t) => t.hash));
+                }
+              }}
+              className="w-4 h-4 rounded accent-accent cursor-pointer"
+            />
+            <span className="text-xs sm:text-sm font-medium text-text-primary">
+              {selectedArray.length > 0
+                ? `${selectedArray.length} dipilih`
+                : `Semua (${filtered.length})`}
             </span>
-            <span className="text-sm font-medium text-text-primary">
-              selected
-            </span>
-          </div>
+          </label>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="min-h-[40px] px-2.5 sm:px-3"
-              icon={<Play className="w-4 h-4 text-success" />}
-              loading={bulkResume.isPending}
-              onClick={() =>
-                bulkResume.mutate(selectedArray, {
-                  onSuccess: () => clearSelection(),
-                })
-              }
-            >
-              <span className="hidden xs:inline sm:inline">Resume</span>
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="min-h-[40px] px-2.5 sm:px-3"
-              icon={<Pause className="w-4 h-4 text-warning" />}
-              loading={bulkPause.isPending}
-              onClick={() =>
-                bulkPause.mutate(selectedArray, {
-                  onSuccess: () => clearSelection(),
-                })
-              }
-            >
-              <span className="hidden xs:inline sm:inline">Pause</span>
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              className="min-h-[40px] px-2.5 sm:px-3"
-              icon={<Trash2 className="w-4 h-4" />}
-              onClick={() => setDeleteConfirmHashes(selectedArray)}
-            >
-              <span className="hidden xs:inline sm:inline">Delete</span>
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="min-h-[40px] px-2.5 sm:px-3 text-accent hover:text-accent-hover hover:border-accent/40"
-              icon={<UploadCloud className="w-4 h-4 text-accent" />}
-              onClick={handleBatchDriveUpload}
-              title={`Upload ${completedSelected.length} completed torrent${completedSelected.length !== 1 ? "s" : ""} to Google Drive`}
-            >
-              <span className="hidden xs:inline sm:inline">Upload to Drive</span>
-            </Button>
+            {selectedArray.length > 0 && (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="min-h-[38px] px-2.5 sm:px-3 text-xs"
+                  icon={<Play className="w-4 h-4 text-success" />}
+                  loading={bulkResume.isPending}
+                  onClick={() =>
+                    bulkResume.mutate(selectedArray, {
+                      onSuccess: () => clearSelection(),
+                    })
+                  }
+                >
+                  <span className="hidden xs:inline">Resume</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="min-h-[38px] px-2.5 sm:px-3 text-xs"
+                  icon={<Pause className="w-4 h-4 text-warning" />}
+                  loading={bulkPause.isPending}
+                  onClick={() =>
+                    bulkPause.mutate(selectedArray, {
+                      onSuccess: () => clearSelection(),
+                    })
+                  }
+                >
+                  <span className="hidden xs:inline">Pause</span>
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  className="min-h-[38px] px-2.5 sm:px-3 text-xs"
+                  icon={<Trash2 className="w-4 h-4" />}
+                  onClick={() => setDeleteConfirmHashes(selectedArray)}
+                >
+                  <span className="hidden xs:inline">Delete</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="min-h-[38px] px-2.5 sm:px-3 text-xs text-accent hover:text-accent-hover hover:border-accent/40"
+                  icon={<UploadCloud className="w-4 h-4 text-accent" />}
+                  onClick={handleBatchDriveUpload}
+                  title={`Upload ${completedSelected.length} completed torrent ke Google Drive`}
+                >
+                  <span className="hidden xs:inline">Upload to Drive</span>
+                </Button>
+              </>
+            )}
+
             <button
               type="button"
-              onClick={clearSelection}
-              className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-glass-hover text-text-muted hover:text-text-primary"
-              aria-label="Clear selection"
+              onClick={() => {
+                clearSelection();
+                setIsSelectMode(false);
+              }}
+              className="px-3 min-h-[38px] rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-xs font-medium text-text-primary transition-colors"
             >
-              <X className="w-4 h-4" />
+              Selesai
             </button>
+          </div>
+        </div>
+      ) : (
+        /* Normal Mode: Clean Bar with [Pilih] button */
+        <div className="flex items-center justify-between gap-2 text-xs text-text-muted">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSelectMode(true)}
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium"
+              title="Pilih beberapa torrent"
+            >
+              <CheckSquare className="w-3.5 h-3.5 text-accent" />
+              <span>Pilih</span>
+            </button>
+            <span className="text-[11px] text-text-muted">
+              {filtered.length} torrent
+            </span>
           </div>
         </div>
       )}
@@ -223,7 +271,12 @@ export function TorrentsPage() {
           <p className="text-xs text-text-muted mt-1">{String(error)}</p>
         </div>
       ) : (
-        <TorrentTable torrents={filtered} filterKey={torrentFilter} />
+        <TorrentTable
+          torrents={filtered}
+          filterKey={torrentFilter}
+          isSelectMode={inSelectionMode}
+          onEnterSelectMode={() => setIsSelectMode(true)}
+        />
       )}
 
       <DriveAuthModal

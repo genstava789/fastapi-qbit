@@ -58,7 +58,7 @@ export function AppLayout() {
         )}
       >
         <Header />
-        <main className="flex-1 p-4 sm:p-6 pb-28 md:pb-8">
+        <main className="flex-1 p-4 sm:p-6 pb-[4.5rem] md:pb-8">
           <Suspense fallback={<RouteSkeletonFallback />}>
             <Outlet />
           </Suspense>

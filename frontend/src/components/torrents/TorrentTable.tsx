@@ -40,6 +40,8 @@ const PAGE_SIZE = 10;
 interface TorrentTableProps {
   torrents: TorrentItem[];
   filterKey?: string;
+  isSelectMode?: boolean;
+  onEnterSelectMode?: () => void;
 }
 
 type SortKey = keyof TorrentItem;
@@ -76,7 +78,8 @@ interface MobileTorrentCardProps {
   activeDriveUpload?: DriveUploadProgress;
   completedDriveUpload?: { filename: string; drive_file_id?: string; completed_at?: number };
   isSelected: boolean;
-  selectionMode: boolean;
+  isSelectMode: boolean;
+  onEnterSelectMode?: () => void;
   onToggleSelect: () => void;
   onOpenDetail: () => void;
   onPause: () => void;
@@ -90,7 +93,8 @@ function MobileTorrentCard({
   activeDriveUpload,
   completedDriveUpload,
   isSelected,
-  selectionMode,
+  isSelectMode,
+  onEnterSelectMode,
   onToggleSelect,
   onOpenDetail,
   onPause,
@@ -104,6 +108,9 @@ function MobileTorrentCard({
     longPressedRef.current = false;
     longPressTimer.current = setTimeout(() => {
       longPressedRef.current = true;
+      if (!isSelectMode) {
+        onEnterSelectMode?.();
+      }
       onToggleSelect();
     }, 450);
   };
@@ -120,7 +127,7 @@ function MobileTorrentCard({
       longPressedRef.current = false;
       return;
     }
-    if (selectionMode) {
+    if (isSelectMode) {
       onToggleSelect();
     } else {
       onOpenDetail();
@@ -135,34 +142,36 @@ function MobileTorrentCard({
       onTouchEnd={handleTouchEndOrMove}
       onTouchMove={handleTouchEndOrMove}
       className={cn(
-        "glass rounded-2xl p-4 transition-all select-none",
+        "glass rounded-2xl p-4 transition-all select-none cursor-pointer",
         isSelected
           ? "border-accent bg-accent/10 ring-1 ring-accent/40"
           : "border-glass-border"
       )}
     >
-      {/* Top Row: Large 44x44 Checkbox + Title + More Button (44x44) */}
+      {/* Top Row: Checkbox (shown only in isSelectMode) + Title + More Button */}
       <div className="flex items-start gap-2">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSelect();
-          }}
-          aria-label={`Select ${torrent.name}`}
-          className="min-w-[44px] min-h-[44px] -ml-2 -mt-1 flex items-center justify-center rounded-xl active:bg-glass-hover flex-shrink-0"
-        >
-          <span
-            className={cn(
-              "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors",
-              isSelected
-                ? "bg-accent border-accent text-white"
-                : "border-text-muted/50 bg-surface-elevated"
-            )}
+        {isSelectMode && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect();
+            }}
+            aria-label={`Select ${torrent.name}`}
+            className="min-w-[40px] min-h-[40px] -ml-1 -mt-1 flex items-center justify-center rounded-xl active:bg-glass-hover flex-shrink-0"
           >
-            {isSelected && <Check className="w-4 h-4 stroke-[3]" />}
-          </span>
-        </button>
+            <span
+              className={cn(
+                "w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors",
+                isSelected
+                  ? "bg-accent border-accent text-white"
+                  : "border-text-muted/50 bg-surface-elevated"
+              )}
+            >
+              {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+            </span>
+          </button>
+        )}
 
         <div
           onClick={handleCardClick}
@@ -313,7 +322,12 @@ function MobileTorrentCard({
   );
 }
 
-export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps) {
+export function TorrentTable({
+  torrents,
+  filterKey = "all",
+  isSelectMode = false,
+  onEnterSelectMode,
+}: TorrentTableProps) {
   const searchQuery = useAppStore((s) => s.searchQuery);
   const selectedTorrents = useAppStore((s) => s.selectedTorrents);
   const toggleSelection = useAppStore((s) => s.toggleTorrentSelection);
@@ -485,7 +499,7 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
     <>
       {/* MOBILE VIEW: Thumb-Friendly Card Layout */}
       <div className="md:hidden space-y-3">
-        {visibleTorrents.length > 0 && (
+        {isSelectMode && visibleTorrents.length > 0 && (
           <div className="flex items-center justify-between px-1">
             <button
               type="button"
@@ -511,7 +525,7 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
                 : `Select Page (${visibleTorrents.length})`}
             </button>
             <span className="text-xs text-text-muted">
-              Long-press to multi-select
+              Mode pilih aktif
             </span>
           </div>
         )}
@@ -526,7 +540,8 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
               activeDriveUpload={driveInfo.active}
               completedDriveUpload={driveInfo.completed}
               isSelected={selectedTorrents.has(t.hash)}
-              selectionMode={selectionMode}
+              isSelectMode={isSelectMode}
+              onEnterSelectMode={onEnterSelectMode}
               onToggleSelect={() => toggleSelection(t.hash)}
               onOpenDetail={() => setDetailHash(t.hash)}
               onPause={() => pauseMutation.mutate(t.hash)}
@@ -555,18 +570,20 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-glass-border text-text-muted text-xs uppercase tracking-wider">
-                <th className="px-4 py-3 w-10">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={() =>
-                      allVisibleSelected
-                        ? clearSelection()
-                        : selectAll(visibleTorrents.map((t) => t.hash))
-                    }
-                    className="rounded border-glass-border bg-surface-elevated accent-accent"
-                  />
-                </th>
+                {isSelectMode && (
+                  <th className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={() =>
+                        allVisibleSelected
+                          ? clearSelection()
+                          : selectAll(visibleTorrents.map((t) => t.hash))
+                      }
+                      className="rounded border-glass-border bg-surface-elevated accent-accent cursor-pointer"
+                    />
+                  </th>
+                )}
                 <th
                   className="px-4 py-3 text-left cursor-pointer hover:text-text-primary transition-colors"
                   onClick={() => toggleSort("name")}
@@ -647,17 +664,25 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
                         : "hover:bg-glass-hover/30"
                     )}
                   >
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedTorrents.has(t.hash)}
-                        onChange={() => toggleSelection(t.hash)}
-                        className="rounded border-glass-border bg-surface-elevated accent-accent"
-                      />
-                    </td>
+                    {isSelectMode && (
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedTorrents.has(t.hash)}
+                          onChange={() => toggleSelection(t.hash)}
+                          className="rounded border-glass-border bg-surface-elevated accent-accent cursor-pointer"
+                        />
+                      </td>
+                    )}
                     <td
                       className="px-4 py-3 cursor-pointer"
-                      onClick={() => setDetailHash(t.hash)}
+                      onClick={() => {
+                        if (isSelectMode) {
+                          toggleSelection(t.hash);
+                        } else {
+                          setDetailHash(t.hash);
+                        }
+                      }}
                     >
                       <div className="max-w-xs">
                         <div className="flex items-center gap-2">
@@ -821,7 +846,7 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center">
+                  <td colSpan={isSelectMode ? 10 : 9} className="px-4 py-12 text-center">
                     <div className="text-text-muted">
                       <Download className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p className="text-base font-medium">No torrents found</p>
@@ -856,6 +881,20 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-secondary hover:bg-glass-hover hover:text-text-primary transition-colors"
               >
                 <Info className="w-4 h-4" /> Details
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isSelectMode) {
+                    onEnterSelectMode?.();
+                  }
+                  toggleSelection(contextMenu.hash);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-text-secondary hover:bg-glass-hover hover:text-text-primary transition-colors"
+              >
+                <Check className="w-4 h-4 text-accent" />
+                {selectedTorrents.has(contextMenu.hash) ? "Deselect" : "Select"}
               </button>
               <button
                 type="button"
@@ -1031,6 +1070,9 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
             <button
               type="button"
               onClick={() => {
+                if (!isSelectMode) {
+                  onEnterSelectMode?.();
+                }
                 toggleSelection(mobileSheetTorrent.hash);
                 setMobileSheetTorrent(null);
               }}
