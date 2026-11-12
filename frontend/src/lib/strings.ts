@@ -137,6 +137,7 @@ export const UI_STRINGS = {
     directDownload: "Direct Download",
     directDownloadTitle: "Download directly via Cloudflare Edge proxy",
     metadataTitle: "File Information",
+    fileName: "File Name",
     fileSize: "File Size",
     mimeType: "MIME Type",
     lastModified: "Last Modified",

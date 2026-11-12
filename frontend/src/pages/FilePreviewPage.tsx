@@ -175,6 +175,10 @@ export function FilePreviewPage() {
   const proxyDownloadUrl = fileId
     ? `/download.aspx?id=${fileId}&name=${encodeURIComponent(displayName)}`
     : `/download.aspx?name=${encodeURIComponent(displayName)}`;
+  const fullDownloadUrl =
+    typeof window !== "undefined"
+      ? new URL(proxyDownloadUrl, window.location.origin).href
+      : proxyDownloadUrl;
 
   // Inline stream for video/audio players via Cloudflare Edge
   const streamUrl = fileId
@@ -193,8 +197,7 @@ export function FilePreviewPage() {
   };
 
   const handleCopyDownloadUrl = () => {
-    const fullUrl = new URL(proxyDownloadUrl, window.location.origin).href;
-    navigator.clipboard.writeText(fullUrl);
+    navigator.clipboard.writeText(fullDownloadUrl);
     setCopiedDownloadUrl(true);
     toast.success(S.directDownloadUrlCopied);
     setTimeout(() => setCopiedDownloadUrl(false), 2000);
@@ -254,13 +257,13 @@ export function FilePreviewPage() {
 
   return (
     <div className="space-y-4 sm:space-y-5 max-w-5xl mx-auto">
-      {/* ── Top Bar: Back, Parent Breadcrumb, Full Title & Secondary Actions (Share, Open in Drive, Delete) ── */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
+      {/* ── Top Bar: Back, Parent Breadcrumb & Secondary Actions (Share, Open in Drive, Delete) ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             type="button"
             onClick={() => navigate(backToDriveUrl, { state: backToDriveState })}
-            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors flex-shrink-0 mt-0.5"
+            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors flex-shrink-0"
             title={S.backTitle}
             aria-label={S.backAria}
           >
@@ -306,9 +309,6 @@ export function FilePreviewPage() {
                 </div>
               ) : null}
             </nav>
-            <h1 className="text-base sm:text-xl font-bold text-text-primary line-clamp-2 break-words [overflow-wrap:anywhere] leading-snug mt-1">
-              {displayName}
-            </h1>
           </div>
         </div>
 
@@ -477,11 +477,8 @@ export function FilePreviewPage() {
           </div>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-surface-elevated/70 border border-glass-border text-xs font-mono text-text-muted flex items-center justify-between gap-2">
-          <span className="truncate">{proxyDownloadUrl}</span>
-          <span className="text-[10px] text-text-muted flex-shrink-0 uppercase font-semibold">
-            GET /download.aspx
-          </span>
+        <div className="p-2.5 rounded-xl bg-surface-elevated/70 border border-glass-border text-xs font-mono text-text-muted overflow-x-auto no-scrollbar">
+          <span className="whitespace-nowrap select-all">{fullDownloadUrl}</span>
         </div>
       </div>
 
@@ -493,6 +490,16 @@ export function FilePreviewPage() {
         </h3>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+          <div className="col-span-2 sm:col-span-3 px-3 py-2 rounded-xl bg-surface-elevated/60 border border-glass-border/70">
+            <span className="text-[11px] text-text-muted flex items-center gap-1.5">
+              <FileText className="w-3 h-3 text-accent flex-shrink-0" />
+              <span>{S.fileName}</span>
+            </span>
+            <p className="font-semibold text-text-primary mt-0.5 text-xs sm:text-sm break-words [overflow-wrap:anywhere] leading-snug">
+              {displayName}
+            </p>
+          </div>
+
           <div className="px-3 py-2 rounded-xl bg-surface-elevated/60 border border-glass-border/70">
             <span className="text-[11px] text-text-muted flex items-center gap-1.5">
               <HardDrive className="w-3 h-3 text-accent flex-shrink-0" />
