@@ -8,6 +8,9 @@ import {
   filterTorrents,
   paginateItems,
   formatUptime,
+  isTorrentsAddedMetadataSuccess,
+  isTorrentAddSuccess,
+  normalizeTorrentActionResponse,
 } from "./utils";
 import type { TorrentItem } from "@/types";
 
@@ -132,5 +135,58 @@ describe("utils formatting", () => {
     expect(formatUptime(0)).toBe("0m");
     expect(formatUptime(1232520)).toBe("14d 6h 22m");
     expect(formatUptime(3660)).toBe("1h 1m");
+  });
+
+  describe("torrent add response helpers", () => {
+    const userMetadataError =
+      "Could not add magnet link (it may already exist in your download queue: 'TorrentsAddedMetadata({'added_torrent_ids': ['094a7f561ec0c6bafd4bee07842b610e3d475386'], 'failure_count': 0, 'pending_count': 0, 'success_count': 1})').";
+    const userMetadataResult =
+      "TorrentsAddedMetadata({'added_torrent_ids': ['094a7f561ec0c6bafd4bee07842b610e3d475386'], 'failure_count': 0, 'pending_count': 0, 'success_count': 1})";
+    const failedMetadataResult =
+      "TorrentsAddedMetadata({'added_torrent_ids': [], 'failure_count': 1, 'pending_count': 0, 'success_count': 0})";
+
+    it("correctly identifies TorrentsAddedMetadata success in strings", () => {
+      expect(isTorrentsAddedMetadataSuccess(userMetadataError)).toBe(true);
+      expect(isTorrentsAddedMetadataSuccess(userMetadataResult)).toBe(true);
+      expect(isTorrentsAddedMetadataSuccess(failedMetadataResult)).toBe(false);
+      expect(isTorrentsAddedMetadataSuccess("Some unrelated error")).toBe(false);
+      expect(isTorrentsAddedMetadataSuccess(null)).toBe(false);
+    });
+
+    it("evaluates isTorrentAddSuccess correctly for both real and false-negative responses", () => {
+      expect(isTorrentAddSuccess({ success: true, message: "Queued" })).toBe(true);
+      expect(
+        isTorrentAddSuccess({
+          success: false,
+          message: userMetadataError,
+          data: { result: userMetadataResult },
+        })
+      ).toBe(true);
+      expect(
+        isTorrentAddSuccess({
+          success: false,
+          message: "Could not add magnet: failed",
+          data: { result: failedMetadataResult },
+        })
+      ).toBe(false);
+      expect(isTorrentAddSuccess(null)).toBe(false);
+    });
+
+    it("normalizes false-negative TorrentActionResponse to success: true", () => {
+      const normalized = normalizeTorrentActionResponse({
+        success: false,
+        message: userMetadataError,
+        data: { result: userMetadataResult },
+      });
+      expect(normalized.success).toBe(true);
+      expect(normalized.message).toBe("Magnet link successfully queued for download.");
+
+      const genuineFailure = normalizeTorrentActionResponse({
+        success: false,
+        message: "Network error",
+      });
+      expect(genuineFailure.success).toBe(false);
+      expect(genuineFailure.message).toBe("Network error");
+    });
   });
 });

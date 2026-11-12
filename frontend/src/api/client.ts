@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from "axios";
+import { normalizeTorrentActionResponse } from "@/lib/utils";
 import type {
   AddMagnetRequest,
   HealthStatus,
@@ -52,7 +53,10 @@ export class QbitApi {
       "/torrents/add-magnet",
       payload
     );
-    return data;
+    return normalizeTorrentActionResponse(
+      data,
+      "Magnet link berhasil ditambahkan!"
+    );
   }
 
   async addTorrentFile(
@@ -81,7 +85,10 @@ export class QbitApi {
       formData,
       { headers: { "Content-Type": "multipart/form-data" } }
     );
-    return data;
+    return normalizeTorrentActionResponse(
+      data,
+      `File torrent '${file.name}' berhasil ditambahkan!`
+    );
   }
 
   async getSystemStats(): Promise<SystemStats> {

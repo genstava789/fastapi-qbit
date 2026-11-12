@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { Modal, Button, Input } from "@/components/ui";
+import { isTorrentAddSuccess } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
 import {
   useAddMagnet,
@@ -123,7 +124,11 @@ export function AddTorrentModal() {
           auto_tmm: autoTmmValue,
         },
         {
-          onSuccess: handleClose,
+          onSuccess: (data) => {
+            if (isTorrentAddSuccess(data)) {
+              handleClose();
+            }
+          },
         }
       );
     } else if (tab === "file" && selectedFile) {
@@ -139,7 +144,11 @@ export function AddTorrentModal() {
           },
         },
         {
-          onSuccess: handleClose,
+          onSuccess: (data) => {
+            if (isTorrentAddSuccess(data)) {
+              handleClose();
+            }
+          },
         }
       );
     }

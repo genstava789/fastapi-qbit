@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { TorrentFilter, TorrentItem } from "@/types";
+import type { TorrentActionResponse, TorrentFilter, TorrentItem } from "@/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -138,4 +138,88 @@ export function paginateItems<T>(
     endIndex: end,
   };
 }
+
+/**
+ * Checks if a string representation of qBittorrent result or error message
+ * corresponds to a successful TorrentsAddedMetadata response.
+ */
+export function isTorrentsAddedMetadataSuccess(text?: string | null): boolean {
+  if (!text || typeof text !== "string") return false;
+  if (!text.toLowerCase().includes("torrentsaddedmetadata")) return false;
+
+  // If added_torrent_ids contains at least one ID: ['xyz...'] or ["xyz..."] or ('xyz',)
+  const hasAddedIds = /['"]added_torrent_ids['"]\s*:\s*(?:\[\s*['"][a-fA-F0-9]+['"]|\(\s*['"][a-fA-F0-9]+['"])/i.test(
+    text
+  );
+  if (hasAddedIds) return true;
+
+  // If success_count is greater than 0
+  const successMatch = text.match(/['"]success_count['"]\s*:\s*(\d+)/i);
+  if (successMatch && parseInt(successMatch[1], 10) > 0) return true;
+
+  // Check for explicit zero-addition / failure: e.g. success_count: 0 and added_torrent_ids: []
+  const isEmptyIds = /['"]added_torrent_ids['"]\s*:\s*(?:\[\s*\]|\(\s*\))/i.test(text);
+  const isZeroSuccess = successMatch && parseInt(successMatch[1], 10) === 0;
+  if (isEmptyIds && isZeroSuccess) {
+    return false;
+  }
+
+  // If failure_count is 0 and it's not explicitly zero additions
+  const failureMatch = text.match(/['"]failure_count['"]\s*:\s*(\d+)/i);
+  if (failureMatch && parseInt(failureMatch[1], 10) === 0 && !isEmptyIds && !isZeroSuccess) {
+    return true;
+  }
+
+  return !isZeroSuccess && !isEmptyIds;
+}
+
+/**
+ * Checks if a torrent action response (or message) indicates success,
+ * even if success was marked false due to TorrentsAddedMetadata string parsing.
+ */
+export function isTorrentAddSuccess(
+  response?: {
+    success?: boolean;
+    message?: string;
+    data?: any;
+  } | null
+): boolean {
+  if (!response) return false;
+  if (response.success) return true;
+
+  if (isTorrentsAddedMetadataSuccess(response.message)) return true;
+
+  const resultStr =
+    typeof response.data?.result === "string"
+      ? response.data.result
+      : typeof response.data?.result === "object"
+      ? JSON.stringify(response.data.result)
+      : "";
+
+  if (isTorrentsAddedMetadataSuccess(resultStr)) return true;
+
+  return false;
+}
+
+/**
+ * Normalizes a TorrentActionResponse, converting false-negative TorrentsAddedMetadata
+ * into true success responses.
+ */
+export function normalizeTorrentActionResponse(
+  response: TorrentActionResponse,
+  defaultSuccessMessage = "Magnet link successfully queued for download."
+): TorrentActionResponse {
+  if (response.success) return response;
+
+  if (isTorrentAddSuccess(response)) {
+    return {
+      ...response,
+      success: true,
+      message: defaultSuccessMessage,
+    };
+  }
+
+  return response;
+}
+
 

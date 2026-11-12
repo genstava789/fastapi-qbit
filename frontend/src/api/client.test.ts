@@ -66,6 +66,42 @@ describe("QbitApi client", () => {
     expect(res.success).toBe(true);
   });
 
+  it("normalizes TorrentsAddedMetadata response to success: true for addMagnet", async () => {
+    const payload = { magnet_url: "magnet:?xt=urn:btih:094a7f561ec0c6bafd4bee07842b610e3d475386" };
+    const rawBackendErrorMsg =
+      "Could not add magnet link (it may already exist in your download queue: 'TorrentsAddedMetadata({'added_torrent_ids': ['094a7f561ec0c6bafd4bee07842b610e3d475386'], 'failure_count': 0, 'pending_count': 0, 'success_count': 1})').";
+    mockClient.post.mockResolvedValueOnce({
+      data: {
+        success: false,
+        message: rawBackendErrorMsg,
+        data: {
+          result:
+            "TorrentsAddedMetadata({'added_torrent_ids': ['094a7f561ec0c6bafd4bee07842b610e3d475386'], 'failure_count': 0, 'pending_count': 0, 'success_count': 1})",
+        },
+      },
+    });
+    const res = await api.addMagnet(payload);
+    expect(res.success).toBe(true);
+    expect(res.message).toBe("Magnet link berhasil ditambahkan!");
+  });
+
+  it("keeps success: false for real add failures with empty added_torrent_ids", async () => {
+    const payload = { magnet_url: "magnet:?xt=urn:btih:failed" };
+    mockClient.post.mockResolvedValueOnce({
+      data: {
+        success: false,
+        message:
+          "Could not add magnet link (it may already exist in your download queue: 'TorrentsAddedMetadata({'added_torrent_ids': [], 'failure_count': 1, 'pending_count': 0, 'success_count': 0})').",
+        data: {
+          result:
+            "TorrentsAddedMetadata({'added_torrent_ids': [], 'failure_count': 1, 'pending_count': 0, 'success_count': 0})",
+        },
+      },
+    });
+    const res = await api.addMagnet(payload);
+    expect(res.success).toBe(false);
+  });
+
   it("calls pause, resume, and delete endpoints", async () => {
     mockClient.post.mockResolvedValue({ data: { success: true, message: "ok" } });
     mockClient.delete.mockResolvedValue({ data: { success: true, message: "ok" } });

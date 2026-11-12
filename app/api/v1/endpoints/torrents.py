@@ -5,7 +5,7 @@ from app.schemas.torrent import (
     TorrentActionResponse,
     TorrentItemResponse,
 )
-from app.services.qbit_service import qbit_service
+from app.services.qbit_service import is_add_torrent_success, qbit_service
 
 router = APIRouter()
 
@@ -28,17 +28,17 @@ def add_magnet(payload: AddMagnetRequest):
             skip_checking=payload.skip_checking,
             auto_tmm=payload.auto_tmm,
         )
-        if "Ok" in result or "ok" in result.lower():
+        if is_add_torrent_success(result):
             return TorrentActionResponse(
                 success=True,
                 message="Magnet link successfully queued for download.",
-                data={"result": result, "category": payload.category},
+                data={"result": str(result), "category": payload.category},
             )
         else:
             return TorrentActionResponse(
                 success=False,
                 message=f"Could not add magnet link (it may already exist in your download queue: '{result}').",
-                data={"result": result},
+                data={"result": str(result)},
             )
     except Exception as e:
         raise HTTPException(
@@ -77,17 +77,17 @@ async def add_torrent_file(
             skip_checking=skip_checking,
             auto_tmm=auto_tmm,
         )
-        if "Ok" in result or "ok" in result.lower():
+        if is_add_torrent_success(result):
             return TorrentActionResponse(
                 success=True,
                 message=f"Torrent file '{file.filename}' successfully queued.",
-                data={"result": result, "filename": file.filename},
+                data={"result": str(result), "filename": file.filename},
             )
         else:
             return TorrentActionResponse(
                 success=False,
                 message=f"Could not add torrent file (it may already exist: '{result}').",
-                data={"result": result},
+                data={"result": str(result)},
             )
     except Exception as e:
         raise HTTPException(

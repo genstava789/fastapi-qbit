@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { QbitApi } from "@/api/client";
+import { isTorrentAddSuccess, isTorrentsAddedMetadataSuccess } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
 import type { AddMagnetRequest } from "@/types";
 import toast from "react-hot-toast";
@@ -64,15 +65,25 @@ export function useAddMagnet() {
   return useMutation({
     mutationFn: (payload: AddMagnetRequest) => api!.addMagnet(payload),
     onSuccess: (data) => {
-      if (data.success) {
+      if (isTorrentAddSuccess(data)) {
         toast.success("Magnet link berhasil ditambahkan!");
       } else {
         toast.error(data.message);
       }
       qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
     },
-    onError: (err: Error) => {
-      toast.error(`Gagal menambahkan magnet: ${err.message}`);
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.detail ||
+        err?.message ||
+        "";
+      if (isTorrentsAddedMetadataSuccess(msg)) {
+        toast.success("Magnet link berhasil ditambahkan!");
+        qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
+      } else {
+        toast.error(`Gagal menambahkan magnet: ${err.message || msg}`);
+      }
     },
   });
 }
@@ -96,15 +107,25 @@ export function useAddTorrentFile() {
       };
     }) => api!.addTorrentFile(file, options),
     onSuccess: (data) => {
-      if (data.success) {
+      if (isTorrentAddSuccess(data)) {
         toast.success("File torrent berhasil ditambahkan!");
       } else {
         toast.error(data.message);
       }
       qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
     },
-    onError: (err: Error) => {
-      toast.error(`Gagal mengunggah torrent: ${err.message}`);
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.detail ||
+        err?.message ||
+        "";
+      if (isTorrentsAddedMetadataSuccess(msg)) {
+        toast.success("File torrent berhasil ditambahkan!");
+        qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
+      } else {
+        toast.error(`Gagal mengunggah torrent: ${err.message || msg}`);
+      }
     },
   });
 }

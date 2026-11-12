@@ -31,7 +31,10 @@ async def test_health_endpoint():
 
 
 @pytest.mark.anyio
-async def test_list_torrents():
+async def test_list_torrents(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    monkeypatch.setattr(qbit_service, "list_torrents", lambda **kwargs: [])
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/v1/torrents")
@@ -164,4 +167,63 @@ async def test_add_file_reseed_params(monkeypatch):
         assert captured["save_path"] == "/downloads/complete"
         assert captured["skip_checking"] is True
         assert captured["auto_tmm"] is False
+
+
+@pytest.mark.anyio
+async def test_add_magnet_torrents_added_metadata_success(monkeypatch):
+    import qbittorrentapi
+    from app.services.qbit_service import qbit_service
+
+    meta = qbittorrentapi.torrents.TorrentsAddedMetadata(
+        {
+            "added_torrent_ids": ["094a7f561ec0c6bafd4bee07842b610e3d475386"],
+            "failure_count": 0,
+            "pending_count": 0,
+            "success_count": 1,
+        }
+    )
+    monkeypatch.setattr(qbit_service, "add_magnet", lambda **kwargs: meta)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/torrents/add-magnet",
+            json={
+                "magnet_url": "magnet:?xt=urn:btih:094a7f561ec0c6bafd4bee07842b610e3d475386",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is True
+        assert data["message"] == "Magnet link successfully queued for download."
+
+
+@pytest.mark.anyio
+async def test_add_magnet_torrents_added_metadata_failure(monkeypatch):
+    import qbittorrentapi
+    from app.services.qbit_service import qbit_service
+
+    meta = qbittorrentapi.torrents.TorrentsAddedMetadata(
+        {
+            "added_torrent_ids": [],
+            "failure_count": 1,
+            "pending_count": 0,
+            "success_count": 0,
+        }
+    )
+    monkeypatch.setattr(qbit_service, "add_magnet", lambda **kwargs: meta)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/torrents/add-magnet",
+            json={
+                "magnet_url": "magnet:?xt=urn:btih:094a7f561ec0c6bafd4bee07842b610e3d475386",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["success"] is False
+        assert "Could not add magnet link" in data["message"]
+
 

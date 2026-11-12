@@ -6,6 +6,44 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def is_add_torrent_success(result: Any) -> bool:
+    """Evaluates whether qBittorrent torrents_add response indicates success.
+
+    Handles string responses ('Ok.', 'Fails.'), TorrentsAddedMetadata objects,
+    dictionaries, and string representations of TorrentsAddedMetadata.
+    """
+    if result is None:
+        return False
+    # If TorrentsAddedMetadata object
+    if hasattr(result, "added_torrent_ids"):
+        if len(result.added_torrent_ids) > 0:
+            return True
+        if getattr(result, "success_count", 0) > 0:
+            return True
+        return False
+    if isinstance(result, dict):
+        if len(result.get("added_torrent_ids", [])) > 0:
+            return True
+        if result.get("success_count", 0) > 0:
+            return True
+        return False
+    s = str(result).strip()
+    if not s:
+        return False
+    if "ok" in s.lower():
+        return True
+    if "torrentsaddedmetadata" in s.lower():
+        # Check for explicit failure: success_count: 0 and empty added_torrent_ids
+        if "'success_count': 0" in s and ("'added_torrent_ids': []" in s or "'added_torrent_ids': ()" in s):
+            return False
+        # If success_count >= 1 or added_torrent_ids has entries or failure_count: 0
+        if "'success_count': 0" not in s or "'failure_count': 0" in s:
+            return True
+        return True
+    return False
+
+
+
 class QBitService:
     def __init__(self) -> None:
         self._client: Optional[qbittorrentapi.Client] = None
@@ -49,7 +87,7 @@ class QBitService:
         tags: Optional[List[str]] = None,
         skip_checking: bool = False,
         auto_tmm: Optional[bool] = None,
-    ) -> str:
+    ) -> Any:
         """Adds a torrent via magnet link to qBittorrent."""
         client = self.get_client()
         target_path = save_path or settings.DEFAULT_SAVE_PATH
@@ -67,7 +105,7 @@ class QBitService:
             kwargs["use_auto_torrent_management"] = auto_tmm
 
         result = client.torrents_add(**kwargs)
-        return str(result)
+        return result
 
     def add_torrent_file(
         self,
@@ -78,7 +116,7 @@ class QBitService:
         tags: Optional[List[str]] = None,
         skip_checking: bool = False,
         auto_tmm: Optional[bool] = None,
-    ) -> str:
+    ) -> Any:
         """Adds a torrent from a .torrent file bytes to qBittorrent."""
         client = self.get_client()
         target_path = save_path or settings.DEFAULT_SAVE_PATH
@@ -96,7 +134,7 @@ class QBitService:
             kwargs["use_auto_torrent_management"] = auto_tmm
 
         result = client.torrents_add(**kwargs)
-        return str(result)
+        return result
 
     def list_torrents(
         self,
