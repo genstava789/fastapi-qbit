@@ -144,10 +144,20 @@ class ProwlarrService:
         return url, api_key
 
     def _normalize_search_item(self, item: Dict[str, Any]) -> ProwlarrSearchResult:
+        guid = str(item.get("guid") or "").strip()
         magnet_url = item.get("magnetUrl") or None
         download_url = item.get("downloadUrl") or None
-        if not magnet_url and isinstance(download_url, str) and download_url.startswith("magnet:?"):
+
+        if guid.startswith("magnet:?"):
+            if magnet_url and not magnet_url.startswith("magnet:?") and not download_url:
+                download_url = magnet_url
+            magnet_url = guid
+        elif not magnet_url and isinstance(download_url, str) and download_url.startswith("magnet:?"):
             magnet_url = download_url
+        elif magnet_url and not magnet_url.startswith("magnet:?"):
+            if not download_url:
+                download_url = magnet_url
+            magnet_url = None
 
         return ProwlarrSearchResult(
             title=str(item.get("title") or "Untitled"),
@@ -280,10 +290,14 @@ class ProwlarrService:
             )
             return result, "magnet"
 
-        if not download_url or not download_url.strip():
+        candidate_download = (
+            download_url
+            or (magnet_url if magnet_url and not magnet_url.strip().startswith("magnet:?") else None)
+        )
+        if not candidate_download or not candidate_download.strip():
             raise ValueError("Either magnet_url or download_url is required.")
 
-        current_url = download_url.strip()
+        current_url = candidate_download.strip()
         if current_url.startswith("magnet:?"):
             result = qbit_service.add_magnet(
                 magnet_url=current_url,
