@@ -145,6 +145,29 @@ async function streamGoogleDriveFile(
     const fileName = explicitFileName || meta?.name || `file_${fileId}`;
     const mimeType = meta?.mimeType || "application/octet-stream";
 
+    // Fast-path for HEAD requests (probing size/name by download managers or curl -I)
+    if (request.method === "HEAD") {
+      const cleanAscii = fileName.replace(/[^\x20-\x7E]/g, "_").replace(/["\\;]/g, "");
+      const utf8Encoded = encodeURIComponent(fileName);
+      const disposition = isInline
+        ? `inline; filename="${cleanAscii}"; filename*=UTF-8''${utf8Encoded}`
+        : `attachment; filename="${cleanAscii}"; filename*=UTF-8''${utf8Encoded}`;
+      const headHeaders = new Headers();
+      headHeaders.set("Content-Disposition", disposition);
+      headHeaders.set("Content-Type", mimeType);
+      headHeaders.set("Accept-Ranges", "bytes");
+      headHeaders.set("Access-Control-Allow-Origin", "*");
+      headHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+      headHeaders.set(
+        "Access-Control-Expose-Headers",
+        "Content-Length, Content-Range, Accept-Ranges, Content-Disposition, Content-Type"
+      );
+      if (meta?.size) headHeaders.set("Content-Length", String(meta.size));
+      headHeaders.set("X-Accelerated-By", "Cloudflare Workers Edge (GDI Proxy)");
+      headHeaders.set("Cache-Control", "public, max-age=3600");
+      return new Response(null, { status: 200, headers: headHeaders });
+    }
+
     // Handle Google Workspace documents (Docs, Sheets, Slides) via Export API
     const exportEntry = GDOC_EXPORT_FORMATS[mimeType];
     if (exportEntry) {
