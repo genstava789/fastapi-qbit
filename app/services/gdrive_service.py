@@ -569,11 +569,47 @@ class GDriveService:
             "iconLink": item.get("iconLink"),
         }
 
+    def get_access_token_info(self) -> Dict[str, Any]:
+        """Return valid Google Drive access token, expiry, and OAuth credentials for edge workers."""
+        creds = self.get_credentials()
+        if not creds:
+            raise RuntimeError("Not authenticated with Google Drive.")
+
+        info: Dict[str, Any] = {
+            "access_token": creds.token,
+            "expiry": creds.expiry.isoformat() if getattr(creds, "expiry", None) else None,
+            "token_uri": getattr(creds, "token_uri", "https://oauth2.googleapis.com/token"),
+        }
+        if getattr(creds, "refresh_token", None):
+            info["refresh_token"] = creds.refresh_token
+        if getattr(creds, "client_id", None):
+            info["client_id"] = creds.client_id
+        if getattr(creds, "client_secret", None):
+            info["client_secret"] = creds.client_secret
+
+        # If client credentials missing on creds object, try to load from credentials file
+        try:
+            creds_path = self._get_credentials_path()
+            if os.path.exists(creds_path):
+                with open(creds_path, "r") as f:
+                    cdata = json.load(f)
+                client_info = cdata.get("web", cdata.get("installed", {}))
+                if "client_id" in client_info and "client_id" not in info:
+                    info["client_id"] = client_info["client_id"]
+                if "client_secret" in client_info and "client_secret" not in info:
+                    info["client_secret"] = client_info["client_secret"]
+        except Exception as e:
+            logger.debug(f"Failed to load extra client creds: {e}")
+
+        return info
+
     def open_download_stream(self, file_id: str, range_header: Optional[str] = None):
         """Open a streaming connection to Google Drive API v3 alt=media with range header support."""
         import requests
-        creds = self._get_credentials()
-        url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+        creds = self.get_credentials()
+        if not creds:
+            raise RuntimeError("Not authenticated with Google Drive.")
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&supportsAllDrives=true"
         headers = {"Authorization": f"Bearer {creds.token}"}
         if range_header:
             headers["Range"] = range_header

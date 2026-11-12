@@ -446,6 +446,26 @@ def get_file_meta(file_id: str):
 
 
 @router.get(
+    "/token",
+    summary="Get Drive Access Token Info",
+    description="Returns valid Google Drive OAuth access token and client credentials for edge workers and direct proxies.",
+)
+def get_drive_access_token():
+    try:
+        return gdrive_service.get_access_token_info()
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to obtain access token: {str(e)}",
+        )
+
+
+@router.get(
     "/stream/{file_id}",
     summary="Stream File Content",
     description="Stream file directly from Google Drive API with Range header support.",
@@ -456,11 +476,20 @@ def stream_file_content(file_id: str, request: Request):
         range_header = request.headers.get("Range")
         resp = gdrive_service.open_download_stream(file_id, range_header=range_header)
 
+        if resp.status_code >= 400:
+            error_body = resp.text
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail=f"Google Drive streaming error ({resp.status_code}): {error_body[:500]}",
+            )
+
         filename = meta.get("name", "download")
         mime_type = meta.get("mimeType") or "application/octet-stream"
 
+        from urllib.parse import quote
+        safe_filename = quote(filename)
         response_headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{safe_filename}',
             "Content-Type": mime_type,
             "Accept-Ranges": "bytes",
             "Access-Control-Allow-Origin": "*",
@@ -486,6 +515,8 @@ def stream_file_content(file_id: str, request: Request):
             headers=response_headers,
             media_type=mime_type,
         )
+    except HTTPException:
+        raise
     except RuntimeError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
