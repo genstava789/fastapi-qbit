@@ -337,7 +337,10 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
   useEffect(() => {
     if (!torrents || torrents.length === 0) return;
     for (const t of torrents) {
-      const r = parseFloat(getRatio(t));
+      const r =
+        typeof t.ratio === "number" && !isNaN(t.ratio)
+          ? t.ratio
+          : parseFloat(getRatio(t));
       if (!isNaN(r) && r > 0) {
         saveTorrentRatio(t.hash, t.name, r);
       }

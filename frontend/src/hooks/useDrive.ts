@@ -110,6 +110,54 @@ export function useUploadToDrive() {
   });
 }
 
+export function useBatchUploadToDrive() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: async ({
+      items,
+      folderId,
+    }: {
+      items: Array<{ filePath?: string; torrentHash?: string; name: string }>;
+      folderId?: string;
+    }) => {
+      if (!api) throw new Error("Google Drive API tidak tersedia");
+      const results: Array<{
+        item: { filePath?: string; torrentHash?: string; name: string };
+        upload_id?: string;
+        error?: string;
+      }> = [];
+      for (const item of items) {
+        try {
+          const res = await api.startUpload(item.filePath, folderId, item.torrentHash);
+          results.push({ item, upload_id: res.upload_id });
+        } catch (err: any) {
+          const msg = err.response?.data?.detail || err.message || "Gagal mengunggah";
+          results.push({ item, error: msg });
+        }
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      qc.invalidateQueries({ queryKey: ["drive-uploads", instance?.id] });
+      const successes = results.filter((r) => !r.error);
+      const failures = results.filter((r) => r.error);
+      if (failures.length === 0) {
+        toast.success(`Berhasil memulai upload ${successes.length} torrent ke Google Drive!`);
+      } else if (successes.length > 0) {
+        toast.success(`Memulai upload ${successes.length} torrent (${failures.length} gagal)`);
+      } else {
+        toast.error(`Gagal memulai batch upload: ${failures[0]?.error || "Unknown error"}`);
+      }
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Batch upload failed: ${msg}`);
+    },
+  });
+}
+
 export function useCreateDriveFolder() {
   const api = useDriveApi();
   const qc = useQueryClient();
@@ -123,6 +171,65 @@ export function useCreateDriveFolder() {
     },
     onError: (err: Error) => {
       toast.error(`Failed to create folder: ${err.message}`);
+    },
+  });
+}
+
+export function useDeleteDriveFile() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: (fileId: string) => api!.deleteDriveFile(fileId),
+    onSuccess: () => {
+      toast.success("File deleted from Google Drive");
+      qc.invalidateQueries({ queryKey: ["drive-files", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["drive-storage-quota", instance?.id] });
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Failed to delete: ${msg}`);
+    },
+  });
+}
+
+export function useRenameDriveFile() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: ({ fileId, newName }: { fileId: string; newName: string }) =>
+      api!.renameDriveFile(fileId, newName),
+    onSuccess: () => {
+      toast.success("File renamed");
+      qc.invalidateQueries({ queryKey: ["drive-files", instance?.id] });
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Failed to rename: ${msg}`);
+    },
+  });
+}
+
+export function useBatchDeleteDriveFiles() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: (fileIds: string[]) => api!.batchDeleteDriveFiles(fileIds),
+    onSuccess: (data) => {
+      if (data.deleted?.length > 0) {
+        toast.success(`${data.deleted.length} item(s) deleted from Drive`);
+      }
+      if (data.errors?.length > 0) {
+        toast.error(`Failed to delete ${data.errors.length} item(s)`);
+      }
+      qc.invalidateQueries({ queryKey: ["drive-files", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["drive-storage-quota", instance?.id] });
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Batch delete failed: ${msg}`);
     },
   });
 }

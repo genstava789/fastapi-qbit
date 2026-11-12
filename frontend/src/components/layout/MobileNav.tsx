@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
 import { useHealth } from "@/hooks/useTorrents";
@@ -38,6 +38,7 @@ const drawerNavItems = [
 ];
 
 export function MobileBottomNav() {
+  const location = useLocation();
   const setMobileMenuOpen = useAppStore((s) => s.setMobileMenuOpen);
 
   return (
@@ -47,41 +48,50 @@ export function MobileBottomNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
       <div className="grid grid-cols-5 h-16">
-        {bottomNavItems.map(({ path, icon: Icon, label }) => (
-          <NavLink
-            key={path}
-            to={path}
-            onClick={() => setMobileMenuOpen(false)}
-            className={({ isActive }) =>
-              cn(
-                "flex flex-col items-center justify-center gap-1 min-h-[44px] text-[11px] font-medium transition-colors",
-                isActive
-                  ? "text-accent"
-                  : "text-text-secondary hover:text-text-primary"
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <div
-                  className={cn(
-                    "px-3 py-1 rounded-full transition-colors",
-                    isActive ? "bg-accent/15" : "bg-transparent"
-                  )}
-                >
-                  <Icon className="w-5 h-5" />
-                </div>
-                <span>{label}</span>
-              </>
-            )}
-          </NavLink>
-        ))}
+        {bottomNavItems.map(({ path, icon: Icon, label }) => {
+          const isItemActive = (isActive: boolean) =>
+            isActive || (path === "/drive" && location.pathname.startsWith("/drive"));
+
+          return (
+            <NavLink
+              key={path}
+              to={path}
+              onClick={() => setMobileMenuOpen(false)}
+              className={({ isActive }) =>
+                cn(
+                  "flex flex-col items-center justify-center gap-1 min-h-[44px] text-[11px] font-medium transition-colors",
+                  isItemActive(isActive)
+                    ? "text-accent"
+                    : "text-text-secondary hover:text-text-primary"
+                )
+              }
+            >
+              {({ isActive }) => {
+                const active = isItemActive(isActive);
+                return (
+                  <>
+                    <div
+                      className={cn(
+                        "px-3 py-1 rounded-full transition-colors",
+                        active ? "bg-accent/15" : "bg-transparent"
+                      )}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <span>{label}</span>
+                  </>
+                );
+              }}
+            </NavLink>
+          );
+        })}
       </div>
     </nav>
   );
 }
 
 export function MobileDrawer() {
+  const location = useLocation();
   const mobileMenuOpen = useAppStore((s) => s.mobileMenuOpen);
   const setMobileMenuOpen = useAppStore((s) => s.setMobileMenuOpen);
   const instances = useAppStore((s) => s.instances);
@@ -185,24 +195,29 @@ export function MobileDrawer() {
               <p className="text-[11px] uppercase tracking-wider text-text-muted font-semibold mb-2 px-1">
                 Features & Tools
               </p>
-              {drawerNavItems.map(({ path, icon: Icon, label }) => (
-                <NavLink
-                  key={path}
-                  to={path}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-xl px-3 min-h-[44px] text-sm font-medium transition-all",
-                      isActive
-                        ? "bg-accent/15 text-accent border border-accent/20"
-                        : "text-text-secondary hover:bg-glass-hover hover:text-text-primary"
-                    )
-                  }
-                >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  <span>{label}</span>
-                </NavLink>
-              ))}
+              {drawerNavItems.map(({ path, icon: Icon, label }) => {
+                const isItemActive = (isActive: boolean) =>
+                  isActive || (path === "/drive" && location.pathname.startsWith("/drive"));
+
+                return (
+                  <NavLink
+                    key={path}
+                    to={path}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 rounded-xl px-3 min-h-[44px] text-sm font-medium transition-all",
+                        isItemActive(isActive)
+                          ? "bg-accent/15 text-accent border border-accent/20"
+                          : "text-text-secondary hover:bg-glass-hover hover:text-text-primary"
+                      )
+                    }
+                  >
+                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    <span>{label}</span>
+                  </NavLink>
+                );
+              })}
             </nav>
           </motion.div>
         </div>

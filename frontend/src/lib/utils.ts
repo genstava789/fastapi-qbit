@@ -141,9 +141,9 @@ export function paginateItems<T>(
 
 /**
  * Calculates the share ratio of a torrent.
- * Handles re-seed torrents (where downloaded is 0 or reset),
- * native qBittorrent ratio, and cached historical ratios so ratios
- * never disappear or reset on re-seed.
+ * When native qBittorrent ratio is available and valid from backend/qBittorrent,
+ * it strictly returns the native ratio to prevent runaway increments.
+ * Falls back to peer download calculations or cached historical ratios when needed.
  */
 export function calculateTorrentRatio(
   torrent: {
@@ -155,22 +155,26 @@ export function calculateTorrentRatio(
   },
   cachedRatio?: number
 ): string {
+  // 1. If qBittorrent native ratio is available and valid (>= 0 and < 999),
+  // strictly respect it as the definitive source of truth from backend/qBittorrent.
+  if (
+    torrent.ratio !== undefined &&
+    torrent.ratio !== null &&
+    !isNaN(torrent.ratio) &&
+    torrent.ratio >= 0 &&
+    torrent.ratio < 999
+  ) {
+    return torrent.ratio.toFixed(2);
+  }
+
   const uploaded = torrent.uploaded || 0;
   const downloaded = torrent.downloaded || 0;
   const totalSize = torrent.total_size || 0;
-  const nativeRatio =
-    torrent.ratio !== undefined && torrent.ratio > 0 && torrent.ratio < 999
-      ? torrent.ratio
-      : undefined;
 
   let currentRatio: number | undefined = undefined;
 
-  // 1. If qBittorrent native ratio is available and valid
-  if (nativeRatio !== undefined) {
-    currentRatio = nativeRatio;
-  }
   // 2. Normal torrent with downloaded bytes from peers
-  else if (downloaded > 0) {
+  if (downloaded > 0) {
     currentRatio = uploaded / downloaded;
   }
   // 3. Re-seed mode: files already exist on disk (downloaded <= 0)
@@ -179,13 +183,12 @@ export function calculateTorrentRatio(
     currentRatio = uploaded / totalSize;
   }
 
-  // If we have a cached prior ratio from before the reseed / recheck
+  // 4. Fallback to cached historical ratio (e.g. before reseed / recheck)
   if (cachedRatio !== undefined && cachedRatio > 0) {
     if (currentRatio === undefined || currentRatio <= 0) {
       return cachedRatio.toFixed(2);
     }
-    // If the torrent was re-added or re-checked, uploaded may be session-only or reset.
-    // Ensure the ratio does not regress below the previously achieved ratio.
+    // For re-seed mode without native ratio, accumulate session uploads on top of cached ratio
     const effectiveRatio = Math.max(
       currentRatio,
       downloaded <= 0 && totalSize > 0
@@ -205,6 +208,28 @@ export function calculateTorrentRatio(
   }
 
   return "0.00";
+}
+
+/**
+ * Checks whether a torrent is completed (100% progress or in any seeding/completed state).
+ */
+export function isTorrentComplete(torrent: {
+  progress?: number;
+  state?: string;
+}): boolean {
+  if (torrent.progress !== undefined && torrent.progress >= 100) {
+    return true;
+  }
+  const state = torrent.state || "";
+  const completeStates = [
+    "uploading",
+    "stalledUP",
+    "pausedUP",
+    "forcedUP",
+    "checkingUP",
+    "queuedUP",
+  ];
+  return completeStates.includes(state) || state.includes("UP");
 }
 
 

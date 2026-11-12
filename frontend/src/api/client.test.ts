@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { QbitApi } from "./client";
+import { QbitApi, DriveApi } from "./client";
 
 vi.mock("axios", () => {
   const mockAxiosInstance = {
     get: vi.fn(),
     post: vi.fn(),
     delete: vi.fn(),
+    patch: vi.fn(),
     defaults: { baseURL: "https://mild-leaf.nyc.boxd.sh/api/v1" },
   };
   return {
@@ -149,6 +150,44 @@ describe("QbitApi client", () => {
       "/torrents/add-magnet",
       payload
     );
+  });
+});
+
+describe("DriveApi client", () => {
+  let driveApi: DriveApi;
+  let mockClient: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    driveApi = new DriveApi("https://mild-leaf.nyc.boxd.sh", "/api/v1");
+    mockClient = (axios.create as any).mock.results[0].value;
+  });
+
+  it("handles drive file delete, rename, and batch delete", async () => {
+    mockClient.delete.mockResolvedValueOnce({
+      data: { success: true, file_id: "file123" },
+    });
+    const delRes = await driveApi.deleteDriveFile("file123");
+    expect(mockClient.delete).toHaveBeenCalledWith("/drive/files/file123");
+    expect(delRes.success).toBe(true);
+
+    mockClient.patch.mockResolvedValueOnce({
+      data: { success: true, file: { id: "file123", name: "New Name.iso" } },
+    });
+    const renRes = await driveApi.renameDriveFile("file123", "New Name.iso");
+    expect(mockClient.patch).toHaveBeenCalledWith("/drive/files/file123", {
+      name: "New Name.iso",
+    });
+    expect(renRes.file.name).toBe("New Name.iso");
+
+    mockClient.post.mockResolvedValueOnce({
+      data: { success: true, deleted: ["f1", "f2"], errors: [] },
+    });
+    const batchRes = await driveApi.batchDeleteDriveFiles(["f1", "f2"]);
+    expect(mockClient.post).toHaveBeenCalledWith("/drive/files/batch-delete", {
+      file_ids: ["f1", "f2"],
+    });
+    expect(batchRes.deleted).toEqual(["f1", "f2"]);
   });
 });
 

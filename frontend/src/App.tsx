@@ -25,6 +25,9 @@ const FileBrowserPage = lazy(() =>
 const DrivePage = lazy(() =>
   import("@/pages/DrivePage").then((m) => ({ default: m.DrivePage }))
 );
+const DriveSettingPage = lazy(() =>
+  import("@/pages/DriveSettingPage").then((m) => ({ default: m.DriveSettingPage }))
+);
 const SettingsPage = lazy(() =>
   import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
 );
@@ -51,6 +54,7 @@ export default function App() {
             <Route path="/network" element={<NetworkPage />} />
             <Route path="/files" element={<FileBrowserPage />} />
             <Route path="/drive" element={<DrivePage />} />
+            <Route path="/drive-setting" element={<DriveSettingPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

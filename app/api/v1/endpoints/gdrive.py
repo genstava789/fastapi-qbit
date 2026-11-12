@@ -6,12 +6,14 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, sta
 from app.schemas.gdrive import (
     DriveAuthCodeRequest,
     DriveAuthStatusResponse,
+    DriveBatchDeleteRequest,
     DriveBreadcrumb,
     DriveCreateFolderRequest,
     DriveDefaultPathRequest,
     DriveDefaultPathResponse,
     DriveFileItem,
     DriveListResponse,
+    DriveRenameFileRequest,
     DriveStorageQuota,
     DriveUploadProgress,
     DriveUploadRequest,
@@ -143,6 +145,69 @@ def get_folder_path(file_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get folder path: {str(e)}",
+        )
+
+
+@router.delete(
+    "/files/{file_id}",
+    summary="Delete File",
+    description="Delete a file or folder from Google Drive.",
+)
+def delete_file(file_id: str):
+    try:
+        gdrive_service.delete_file(file_id)
+        return {"success": True, "file_id": file_id, "message": "File deleted successfully."}
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete file: {str(e)}",
+        )
+
+
+@router.patch(
+    "/files/{file_id}",
+    summary="Rename File",
+    description="Rename a file or folder in Google Drive.",
+)
+def rename_file(file_id: str, payload: DriveRenameFileRequest):
+    try:
+        updated = gdrive_service.rename_file(file_id, payload.name)
+        return {"success": True, "file": updated}
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rename file: {str(e)}",
+        )
+
+
+@router.post(
+    "/files/batch-delete",
+    summary="Batch Delete Files",
+    description="Delete multiple files or folders from Google Drive.",
+)
+def batch_delete_files(payload: DriveBatchDeleteRequest):
+    try:
+        result = gdrive_service.batch_delete_files(payload.file_ids)
+        return {"success": True, **result}
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to batch delete files: {str(e)}",
         )
 
 

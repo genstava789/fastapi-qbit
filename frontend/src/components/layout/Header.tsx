@@ -4,8 +4,8 @@ import { Search, Plus, RefreshCw, Menu, X, ArrowRight } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useHealth, useActiveInstance, useTorrents } from "@/hooks/useTorrents";
 import { Button, Badge } from "@/components/ui";
-import { formatBytes, getTorrentStateLabel } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
+import { formatBytes, getTorrentStateLabel, cn } from "@/lib/utils";
+import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 
 export function Header() {
   const location = useLocation();
@@ -18,11 +18,42 @@ export function Header() {
   const { data: health } = useHealth();
   const { data: torrents } = useTorrents();
   const qc = useQueryClient();
+  const isFetchingAny = useIsFetching();
   const [focused, setFocused] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const isTorrentsRoute = location.pathname === "/torrents";
   const isFilesRoute = location.pathname === "/files";
+  const isDriveRoute = location.pathname.startsWith("/drive");
   const isInlineFilterRoute = isTorrentsRoute || isFilesRoute;
+
+  const isSpinning = isSyncing || isFetchingAny > 0;
+
+  const handleGlobalRefresh = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      if (isDriveRoute) {
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["drive-files"] }),
+          qc.invalidateQueries({ queryKey: ["drive-storage-quota"] }),
+          qc.invalidateQueries({ queryKey: ["drive-breadcrumbs"] }),
+          qc.invalidateQueries({ queryKey: ["drive-uploads"] }),
+          qc.refetchQueries({ queryKey: ["drive-files"], type: "active" }),
+          qc.refetchQueries({ queryKey: ["drive-storage-quota"], type: "active" }),
+        ]);
+      } else if (isFilesRoute) {
+        await qc.invalidateQueries({ queryKey: ["fs-files"] });
+      } else {
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["torrents"] }),
+          qc.invalidateQueries({ queryKey: ["main-stats"] }),
+        ]);
+      }
+    } finally {
+      setTimeout(() => setIsSyncing(false), 500);
+    }
+  };
 
   const placeholder = isTorrentsRoute
     ? "Search torrents..."
@@ -167,9 +198,11 @@ export function Header() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => qc.invalidateQueries({ queryKey: ["torrents"] })}
-            className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 p-2"
-            icon={<RefreshCw className="w-4 h-4" />}
+            onClick={handleGlobalRefresh}
+            disabled={isSpinning}
+            className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 p-2 text-text-secondary hover:text-text-primary disabled:opacity-50"
+            icon={<RefreshCw className={cn("w-4 h-4", isSpinning && "animate-spin")} />}
+            title="Sync data"
           >
             <span className="sr-only">Refresh</span>
           </Button>

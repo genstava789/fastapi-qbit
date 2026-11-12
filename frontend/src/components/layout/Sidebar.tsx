@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
 import {
@@ -30,6 +30,7 @@ const navItems = [
 ];
 
 export function Sidebar() {
+  const location = useLocation();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
   const instances = useAppStore((s) => s.instances);
@@ -113,19 +114,23 @@ export function Sidebar() {
             Navigation
           </p>
         )}
-        {navItems.map(({ path, icon: Icon, label }) => (
-          <NavLink
-            key={path}
-            to={path}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
-                isActive
-                  ? "bg-accent/10 text-accent glow-accent"
-                  : "text-text-secondary hover:bg-glass-hover hover:text-text-primary"
-              )
-            }
-          >
+        {navItems.map(({ path, icon: Icon, label }) => {
+          const isItemActive = (isActive: boolean) =>
+            isActive || (path === "/drive" && location.pathname.startsWith("/drive"));
+
+          return (
+            <NavLink
+              key={path}
+              to={path}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
+                  isItemActive(isActive)
+                    ? "bg-accent/10 text-accent glow-accent"
+                    : "text-text-secondary hover:bg-glass-hover hover:text-text-primary"
+                )
+              }
+            >
             <Icon className="w-5 h-5 flex-shrink-0" />
             <AnimatePresence>
               {sidebarOpen && (
@@ -140,7 +145,8 @@ export function Sidebar() {
               )}
             </AnimatePresence>
           </NavLink>
-        ))}
+        );
+      })}
       </nav>
 
       {/* Toggle Button */}

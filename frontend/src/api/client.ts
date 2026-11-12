@@ -256,6 +256,35 @@ export class DriveApi {
     return { url, download_url: url };
   }
 
+  async deleteDriveFile(fileId: string): Promise<{ success: boolean; file_id: string }> {
+    const { data } = await this.client.delete<{ success: boolean; file_id: string }>(
+      `/drive/files/${fileId}`
+    );
+    return data;
+  }
+
+  async renameDriveFile(
+    fileId: string,
+    newName: string
+  ): Promise<{ success: boolean; file: DriveFileItem }> {
+    const { data } = await this.client.patch<{ success: boolean; file: DriveFileItem }>(
+      `/drive/files/${fileId}`,
+      { name: newName }
+    );
+    return data;
+  }
+
+  async batchDeleteDriveFiles(
+    fileIds: string[]
+  ): Promise<{ success: boolean; deleted: string[]; errors: any[] }> {
+    const { data } = await this.client.post<{
+      success: boolean;
+      deleted: string[];
+      errors: any[];
+    }>("/drive/files/batch-delete", { file_ids: fileIds });
+    return data;
+  }
+
   async getDefaultPath(): Promise<{ folder_id: string | null; folder_name: string | null }> {
     const { data } = await this.client.get<{
       folder_id: string | null;

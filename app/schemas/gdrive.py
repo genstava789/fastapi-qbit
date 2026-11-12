@@ -32,6 +32,17 @@ class DriveStorageQuota(BaseModel):
     usage: int
     usageInDrive: int
     usageInTrash: int
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+    user_photo: Optional[str] = None
+
+
+class DriveRenameFileRequest(BaseModel):
+    name: str = Field(..., description="New name for the Google Drive file or folder.")
+
+
+class DriveBatchDeleteRequest(BaseModel):
+    file_ids: List[str] = Field(..., description="List of Google Drive file or folder IDs to delete.")
 
 
 class DriveUploadRequest(BaseModel):

@@ -12,6 +12,7 @@ import {
   isTorrentAddSuccess,
   normalizeTorrentActionResponse,
   calculateTorrentRatio,
+  isTorrentComplete,
 } from "./utils";
 import type { TorrentItem } from "@/types";
 
@@ -249,11 +250,55 @@ describe("utils formatting", () => {
       );
     });
 
+    it("strictly preserves native qBittorrent ratio and prevents runaway increment even with cachedRatio", () => {
+      // Even if re-seed mode parameters or cachedRatio are present, native ratio from backend must prevail
+      expect(
+        calculateTorrentRatio(
+          {
+            ratio: 1.25,
+            downloaded: 0,
+            uploaded: 500,
+            total_size: 1000,
+          },
+          10.5
+        )
+      ).toBe("1.25");
+    });
+
+    it("respects native ratio of zero cleanly", () => {
+      expect(calculateTorrentRatio({ ratio: 0, downloaded: 0, uploaded: 0, total_size: 1000 })).toBe(
+        "0.00"
+      );
+    });
+
     it("handles zero and infinite edge cases cleanly", () => {
       expect(calculateTorrentRatio({ downloaded: 0, uploaded: 0 })).toBe("0.00");
       expect(calculateTorrentRatio({ downloaded: 0, uploaded: 500, total_size: 0 })).toBe(
         "∞"
       );
+    });
+  });
+
+  describe("isTorrentComplete", () => {
+    it("returns true when progress is 100% or greater", () => {
+      expect(isTorrentComplete({ progress: 100, state: "downloading" })).toBe(true);
+      expect(isTorrentComplete({ progress: 100.0, state: "pausedUP" })).toBe(true);
+    });
+
+    it("returns true for seeding states regardless of progress", () => {
+      expect(isTorrentComplete({ progress: 99.9, state: "uploading" })).toBe(true);
+      expect(isTorrentComplete({ progress: 0, state: "pausedUP" })).toBe(true);
+      expect(isTorrentComplete({ progress: 0, state: "stalledUP" })).toBe(true);
+      expect(isTorrentComplete({ progress: 0, state: "forcedUP" })).toBe(true);
+      expect(isTorrentComplete({ progress: 0, state: "queuedUP" })).toBe(true);
+      expect(isTorrentComplete({ progress: 0, state: "checkingUP" })).toBe(true);
+    });
+
+    it("returns false for incomplete/downloading states with progress < 100", () => {
+      expect(isTorrentComplete({ progress: 50, state: "downloading" })).toBe(false);
+      expect(isTorrentComplete({ progress: 0, state: "metaDL" })).toBe(false);
+      expect(isTorrentComplete({ progress: 85, state: "pausedDL" })).toBe(false);
+      expect(isTorrentComplete({ progress: 0, state: "error" })).toBe(false);
     });
   });
 });

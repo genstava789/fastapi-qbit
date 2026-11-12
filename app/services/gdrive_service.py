@@ -161,16 +161,53 @@ class GDriveService:
         }
 
     def get_storage_quota(self) -> Dict[str, Any]:
-        """Return storage quota information from Drive about()."""
+        """Return storage quota and account information from Drive about()."""
         service = self._build_service()
-        about = service.about().get(fields="storageQuota").execute()
+        about = service.about().get(fields="storageQuota, user").execute()
         quota = about.get("storageQuota", {})
+        user = about.get("user", {})
         return {
             "limit": int(quota.get("limit", 0)),
             "usage": int(quota.get("usage", 0)),
             "usageInDrive": int(quota.get("usageInDrive", 0)),
             "usageInTrash": int(quota.get("usageInTrash", 0)),
+            "user_email": user.get("emailAddress"),
+            "user_name": user.get("displayName"),
+            "user_photo": user.get("photoLink"),
         }
+
+    def delete_file(self, file_id: str) -> bool:
+        """Delete a file or folder in Google Drive."""
+        service = self._build_service()
+        service.files().delete(fileId=file_id).execute()
+        return True
+
+    def rename_file(self, file_id: str, new_name: str) -> Dict[str, Any]:
+        """Rename a file or folder in Google Drive."""
+        service = self._build_service()
+        updated = (
+            service.files()
+            .update(
+                fileId=file_id,
+                body={"name": new_name},
+                fields="id, name, mimeType, size, modifiedTime, parents",
+            )
+            .execute()
+        )
+        return updated
+
+    def batch_delete_files(self, file_ids: List[str]) -> Dict[str, Any]:
+        """Delete multiple files or folders from Google Drive."""
+        service = self._build_service()
+        deleted = []
+        errors = []
+        for fid in file_ids:
+            try:
+                service.files().delete(fileId=fid).execute()
+                deleted.append(fid)
+            except Exception as e:
+                errors.append({"file_id": fid, "error": str(e)})
+        return {"deleted": deleted, "errors": errors}
 
     def create_folder(self, name: str, parent_id: str = "root") -> Dict[str, Any]:
         """Create a folder in Google Drive."""

@@ -4,11 +4,14 @@ import {
   useBulkPauseTorrents,
   useBulkResumeTorrents,
 } from "@/hooks/useTorrents";
+import { useDriveAuthStatus } from "@/hooks/useDrive";
 import { useAppStore } from "@/stores/appStore";
 import { TorrentTable, TorrentToolbar, ActiveDriveUploads } from "@/components/torrents";
+import { DriveAuthModal, BatchUploadToDriveModal } from "@/components/drive";
 import { Button, Skeleton, TorrentsSkeleton } from "@/components/ui";
-import { formatBytes, formatSpeed, filterTorrents } from "@/lib/utils";
-import { useMemo } from "react";
+import { formatBytes, formatSpeed, filterTorrents, isTorrentComplete } from "@/lib/utils";
+import { useMemo, useState } from "react";
+import toast from "react-hot-toast";
 import {
   Download,
   Upload,
@@ -18,6 +21,7 @@ import {
   Pause,
   Trash2,
   X,
+  UploadCloud,
 } from "lucide-react";
 
 export function TorrentsPage() {
@@ -30,6 +34,10 @@ export function TorrentsPage() {
 
   const bulkPause = useBulkPauseTorrents();
   const bulkResume = useBulkResumeTorrents();
+
+  const { data: driveAuth } = useDriveAuthStatus();
+  const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
+  const [batchUploadModalOpen, setBatchUploadModalOpen] = useState(false);
 
   const filtered = useMemo(
     () => filterTorrents(torrents || [], torrentFilter),
@@ -45,6 +53,35 @@ export function TorrentsPage() {
     };
   }, [torrents]);
 
+  const selectedArray = Array.from(selectedTorrents);
+
+  const selectedItems = useMemo(() => {
+    if (!torrents || selectedArray.length === 0) return [];
+    return torrents.filter((t) => selectedTorrents.has(t.hash));
+  }, [torrents, selectedTorrents, selectedArray]);
+
+  const completedSelected = useMemo(
+    () => selectedItems.filter(isTorrentComplete),
+    [selectedItems]
+  );
+
+  const handleBatchDriveUpload = () => {
+    if (!driveAuth?.authenticated) {
+      toast("Silakan hubungkan Google Drive terlebih dahulu", { icon: "🔐" });
+      setDriveAuthModalOpen(true);
+      return;
+    }
+
+    if (completedSelected.length === 0) {
+      toast.error(
+        "Hanya torrent yang berstatus Complete yang dapat diunggah ke Google Drive."
+      );
+      return;
+    }
+
+    setBatchUploadModalOpen(true);
+  };
+
   if (!instance) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -58,8 +95,6 @@ export function TorrentsPage() {
       </div>
     );
   }
-
-  const selectedArray = Array.from(selectedTorrents);
 
   return (
     <div className="space-y-4 pb-6">
@@ -154,6 +189,16 @@ export function TorrentsPage() {
             >
               <span className="hidden xs:inline sm:inline">Delete</span>
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="min-h-[40px] px-2.5 sm:px-3 text-accent hover:text-accent-hover hover:border-accent/40"
+              icon={<UploadCloud className="w-4 h-4 text-accent" />}
+              onClick={handleBatchDriveUpload}
+              title={`Upload ${completedSelected.length} completed torrent${completedSelected.length !== 1 ? "s" : ""} to Google Drive`}
+            >
+              <span className="hidden xs:inline sm:inline">Upload to Drive</span>
+            </Button>
             <button
               type="button"
               onClick={clearSelection}
@@ -180,6 +225,21 @@ export function TorrentsPage() {
       ) : (
         <TorrentTable torrents={filtered} filterKey={torrentFilter} />
       )}
+
+      <DriveAuthModal
+        open={driveAuthModalOpen}
+        onClose={() => setDriveAuthModalOpen(false)}
+      />
+
+      <BatchUploadToDriveModal
+        open={batchUploadModalOpen}
+        onClose={() => setBatchUploadModalOpen(false)}
+        torrents={completedSelected}
+        allSelectedCount={selectedArray.length}
+        onSuccess={() => {
+          clearSelection();
+        }}
+      />
     </div>
   );
 }

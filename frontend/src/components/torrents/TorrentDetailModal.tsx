@@ -44,14 +44,20 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
   const cachedRatio = torrent ? getTorrentRatio(torrent.hash, torrent.name) : undefined;
   const ratio = torrent ? calculateTorrentRatio(torrent, cachedRatio) : "0.00";
 
+  const torrentHash = torrent?.hash;
+  const torrentName = torrent?.name;
+  const torrentRatio = torrent?.ratio;
+
   useEffect(() => {
-    if (torrent) {
-      const numRatio = parseFloat(ratio);
-      if (!isNaN(numRatio) && numRatio > 0) {
-        saveTorrentRatio(torrent.hash, torrent.name, numRatio);
-      }
+    if (!torrentHash) return;
+    const r =
+      typeof torrentRatio === "number" && !isNaN(torrentRatio)
+        ? torrentRatio
+        : parseFloat(ratio);
+    if (!isNaN(r) && r > 0) {
+      saveTorrentRatio(torrentHash, torrentName || "", r);
     }
-  }, [torrent, ratio, saveTorrentRatio]);
+  }, [torrentHash, torrentName, torrentRatio, ratio, saveTorrentRatio]);
 
   if (!hash) return null;
 

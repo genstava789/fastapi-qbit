@@ -124,6 +124,9 @@ export interface DriveStorageQuota {
   usage: number;
   usageInDrive: number;
   usageInTrash: number;
+  user_email?: string | null;
+  user_name?: string | null;
+  user_photo?: string | null;
 }
 
 export interface DriveUploadProgress {

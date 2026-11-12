@@ -165,12 +165,9 @@ export const useAppStore = create<AppState>()(
         if (!ratio || ratio <= 0 || isNaN(ratio)) return;
         set((state) => {
           const current = state.reseedRatios || {};
-          const existingHash = hash ? current[hash] || 0 : 0;
-          const existingName = name ? current[name] || 0 : 0;
-          const maxVal = Math.max(ratio, existingHash, existingName);
           const next = { ...current };
-          if (hash) next[hash] = maxVal;
-          if (name) next[name] = maxVal;
+          if (hash) next[hash] = ratio;
+          if (name) next[name] = ratio;
           return { reseedRatios: next };
         });
       },
