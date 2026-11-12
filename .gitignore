@@ -61,6 +61,7 @@ qbit-config/
 credentials.json
 token.json
 gdrive_settings.json
+prowlarr_settings.json
 
 
 

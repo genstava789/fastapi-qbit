@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     GDRIVE_DEFAULT_UPLOAD_FOLDER_ID: str | None = None
     GDRIVE_DEFAULT_UPLOAD_FOLDER_NAME: str | None = None
 
+    # Prowlarr Search defaults (optional, runtime settings stored in prowlarr_settings.json)
+    PROWLARR_URL: str | None = None
+    PROWLARR_API_KEY: str | None = None
+    PROWLARR_SETTINGS_FILE: str = "prowlarr_settings.json"
+
     @property
     def qbit_base_url(self) -> str:
         return f"{self.QBIT_HOST}:{self.QBIT_PORT}"

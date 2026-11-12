@@ -83,9 +83,39 @@ export interface ProwlarrSearchResult {
   leechers: number;
   magnetUrl?: string;
   downloadUrl?: string;
+  infoUrl?: string;
   indexer: string;
   publishDate: string;
   categories: string[];
+  guid?: string;
+}
+
+export interface ProwlarrConfigResponse {
+  configured: boolean;
+  url: string | null;
+  has_api_key: boolean;
+  api_key_masked: string | null;
+  message?: string | null;
+}
+
+export interface ProwlarrConfigPayload {
+  url: string;
+  api_key?: string;
+}
+
+export interface ProwlarrTestResponse {
+  connected: boolean;
+  version?: string | null;
+  app_name?: string | null;
+  message: string;
+}
+
+export interface ProwlarrAddPayload {
+  magnet_url?: string;
+  download_url?: string;
+  save_path?: string;
+  category?: string;
+  is_paused?: boolean;
 }
 
 export interface NetworkDiagnostics {

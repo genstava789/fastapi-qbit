@@ -1,66 +1,89 @@
 import { useState } from "react";
 import { Button, Input, Badge } from "@/components/ui";
-import { Search, Download, Upload, ExternalLink, AlertCircle } from "lucide-react";
+import {
+  Search,
+  Download,
+  Upload,
+  ExternalLink,
+  AlertCircle,
+  CheckCircle2,
+  Settings,
+} from "lucide-react";
 import { formatBytes } from "@/lib/utils";
-import { useAddMagnet } from "@/hooks/useTorrents";
+import { UI_STRINGS } from "@/lib/strings";
+import {
+  useAddProwlarrResult,
+  useProwlarrApi,
+  useProwlarrConfig,
+  useSaveProwlarrConfig,
+  useTestProwlarrConnection,
+} from "@/hooks/useProwlarr";
 import toast from "react-hot-toast";
 import type { ProwlarrSearchResult } from "@/types";
 
+const S = UI_STRINGS.prowlarr;
+
 export function ProwlarrPage() {
+  const api = useProwlarrApi();
+  const { data: config, isLoading: configLoading } = useProwlarrConfig();
+  const saveConfigMutation = useSaveProwlarrConfig();
+  const testConnectionMutation = useTestProwlarrConnection();
+  const addResultMutation = useAddProwlarrResult();
+
   const [query, setQuery] = useState("");
+  const [hasSearched, setHasSearched] = useState(false);
   const [results, setResults] = useState<ProwlarrSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [prowlarrUrl, setProwlarrUrl] = useState(
-    () => localStorage.getItem("prowlarr_url") || ""
-  );
+  const [editingConfig, setEditingConfig] = useState(false);
+
+  const [urlDraft, setUrlDraft] = useState<string | null>(null);
   const [prowlarrApiKey, setProwlarrApiKey] = useState(
     () => localStorage.getItem("prowlarr_apikey") || ""
   );
-  const [configured, setConfigured] = useState(
-    () => !!(localStorage.getItem("prowlarr_url") && localStorage.getItem("prowlarr_apikey"))
-  );
 
-  const addMagnet = useAddMagnet();
+  const prowlarrUrl =
+    urlDraft ?? config?.url ?? localStorage.getItem("prowlarr_url") ?? "";
+  const configured = Boolean(config?.configured);
+  const showSetup = !configured || editingConfig;
+  const canSaveConfig =
+    Boolean(api) &&
+    Boolean(prowlarrUrl.trim()) &&
+    (Boolean(prowlarrApiKey.trim()) || Boolean(config?.has_api_key));
 
-  const saveConfig = () => {
-    localStorage.setItem("prowlarr_url", prowlarrUrl.replace(/\/$/, ""));
-    localStorage.setItem("prowlarr_apikey", prowlarrApiKey);
-    setConfigured(true);
+  const handleSaveConfig = async () => {
+    if (!canSaveConfig) return;
+    await saveConfigMutation.mutateAsync({
+      url: prowlarrUrl.trim(),
+      api_key: prowlarrApiKey.trim() || undefined,
+    });
+    localStorage.removeItem("prowlarr_url");
+    localStorage.removeItem("prowlarr_apikey");
+    setUrlDraft(null);
+    setProwlarrApiKey("");
+    setEditingConfig(false);
+  };
+
+  const handleTestConnection = () => {
+    if (!api) return;
+    testConnectionMutation.mutate({
+      url: prowlarrUrl.trim() || undefined,
+      api_key: prowlarrApiKey.trim() || undefined,
+    });
   };
 
   const handleSearch = async () => {
-    if (!query.trim() || !configured) return;
+    if (!query.trim() || !configured || !api) return;
     setLoading(true);
+    setHasSearched(true);
     setSearchError(null);
     try {
-      const base = prowlarrUrl.replace(/\/$/, "");
-      const url = `${base}/api/v1/search?query=${encodeURIComponent(query)}&type=search`;
-      const res = await fetch(url, {
-        headers: { "X-Api-Key": prowlarrApiKey },
-      });
-      if (!res.ok) {
-        throw new Error(`Prowlarr returned HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setResults(
-        data.map((item: any) => ({
-          title: item.title,
-          size: item.size,
-          seeders: item.seeders,
-          leechers: item.leechers,
-          magnetUrl: item.magnetUrl || item.downloadUrl,
-          downloadUrl: item.downloadUrl,
-          indexer: item.indexer,
-          publishDate: item.publishDate,
-          categories: item.categories?.map((c: any) => c.name) || [],
-        }))
-      );
-    } catch (err) {
+      const items = await api.search({ query: query.trim(), type: "search" });
+      setResults(items);
+    } catch (err: any) {
       const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to connect to Prowlarr API";
+        err?.response?.data?.detail ||
+        (err instanceof Error ? err.message : "Failed to search Prowlarr");
       setSearchError(message);
       toast.error(`Prowlarr search failed: ${message}`);
       setResults([]);
@@ -70,44 +93,97 @@ export function ProwlarrPage() {
   };
 
   const handleAddToQbit = (result: ProwlarrSearchResult) => {
-    const magnetUrl = result.magnetUrl || result.downloadUrl;
-    if (magnetUrl?.startsWith("magnet:")) {
-      addMagnet.mutate({ magnet_url: magnetUrl });
-    }
+    if (!result.magnetUrl && !result.downloadUrl) return;
+    addResultMutation.mutate({
+      magnet_url: result.magnetUrl,
+      download_url: result.downloadUrl,
+    });
   };
 
-  if (!configured) {
+  if (!api) {
+    return (
+      <div className="glass rounded-xl p-6 max-w-lg flex items-start gap-3 border border-warning/30 bg-warning/5">
+        <AlertCircle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+        <p className="text-sm text-text-secondary">{S.noInstanceWarning}</p>
+      </div>
+    );
+  }
+
+  if (configLoading && !config) {
+    return (
+      <div className="space-y-6">
+        <div className="h-8 w-48 rounded-lg bg-glass-hover animate-pulse" />
+        <div className="glass rounded-xl p-6 max-w-lg h-56 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (showSetup) {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Prowlarr Search</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Configure your Prowlarr instance to search indexers
-          </p>
+          <h1 className="text-2xl font-bold text-text-primary">{S.title}</h1>
+          <p className="text-sm text-text-secondary mt-1">{S.setupSubtitle}</p>
         </div>
         <div className="glass rounded-xl p-5 sm:p-6 max-w-lg space-y-4">
           <Input
-            label="Prowlarr URL"
-            placeholder="https://prowlarr.yourdomain.com"
+            label={S.urlLabel}
+            placeholder={S.urlPlaceholder}
             value={prowlarrUrl}
-            onChange={(e) => setProwlarrUrl(e.target.value)}
+            onChange={(e) => setUrlDraft(e.target.value)}
             icon={<ExternalLink className="w-4 h-4" />}
           />
-          <Input
-            label="API Key"
-            placeholder="Your Prowlarr API key"
-            type="password"
-            value={prowlarrApiKey}
-            onChange={(e) => setProwlarrApiKey(e.target.value)}
-          />
-          <Button
-            variant="primary"
-            className="min-h-[44px] w-full sm:w-auto"
-            onClick={saveConfig}
-            disabled={!prowlarrUrl || !prowlarrApiKey}
-          >
-            Save & Connect
-          </Button>
+          <div className="space-y-1.5">
+            <Input
+              label={S.apiKeyLabel}
+              placeholder={
+                config?.has_api_key ? S.apiKeyKeepPlaceholder : S.apiKeyPlaceholder
+              }
+              type="password"
+              value={prowlarrApiKey}
+              onChange={(e) => setProwlarrApiKey(e.target.value)}
+            />
+            {config?.has_api_key && config.api_key_masked && (
+              <p className="text-xs text-text-muted font-mono">
+                {S.savedKeyLabel}: {config.api_key_masked}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <Button
+              variant="primary"
+              className="min-h-[44px] w-full sm:w-auto"
+              onClick={handleSaveConfig}
+              loading={saveConfigMutation.isPending}
+              disabled={!canSaveConfig}
+            >
+              {S.saveConfig}
+            </Button>
+            <Button
+              variant="secondary"
+              className="min-h-[44px] w-full sm:w-auto"
+              onClick={handleTestConnection}
+              loading={testConnectionMutation.isPending}
+              disabled={!prowlarrUrl.trim() && !configured}
+              icon={<CheckCircle2 className="w-4 h-4" />}
+            >
+              {S.testConnection}
+            </Button>
+            {configured && (
+              <Button
+                variant="ghost"
+                className="min-h-[44px] w-full sm:w-auto"
+                onClick={() => {
+                  setUrlDraft(null);
+                  setProwlarrApiKey("");
+                  setEditingConfig(false);
+                }}
+              >
+                {S.cancel}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -117,18 +193,17 @@ export function ProwlarrPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Prowlarr Search</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Search across all configured indexers
-          </p>
+          <h1 className="text-2xl font-bold text-text-primary">{S.title}</h1>
+          <p className="text-sm text-text-secondary mt-1">{S.searchSubtitle}</p>
         </div>
         <Button
           variant="ghost"
           size="sm"
           className="min-h-[44px]"
-          onClick={() => setConfigured(false)}
+          onClick={() => setEditingConfig(true)}
+          icon={<Settings className="w-4 h-4" />}
         >
-          Configure
+          {S.configure}
         </Button>
       </div>
 
@@ -136,7 +211,7 @@ export function ProwlarrPage() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <Input
-            placeholder="Search for torrents..."
+            placeholder={S.searchPlaceholder}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -148,9 +223,10 @@ export function ProwlarrPage() {
           variant="primary"
           onClick={handleSearch}
           loading={loading}
+          disabled={!query.trim()}
           className="min-h-[44px]"
         >
-          Search
+          {S.searchButton}
         </Button>
       </div>
 
@@ -159,10 +235,8 @@ export function ProwlarrPage() {
         <div className="glass rounded-xl p-4 flex items-start gap-3 border border-danger/30 bg-danger/5">
           <AlertCircle className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" />
           <div className="text-sm">
-            <p className="font-medium text-danger">Prowlarr Error</p>
-            <p className="text-xs text-text-secondary mt-0.5">
-              {searchError} — Pastikan URL Prowlarr valid dan mengizinkan CORS dari domain frontend ini.
-            </p>
+            <p className="font-medium text-danger">{S.errorTitle}</p>
+            <p className="text-xs text-text-secondary mt-0.5">{searchError}</p>
           </div>
         </div>
       )}
@@ -171,7 +245,7 @@ export function ProwlarrPage() {
       {results.length > 0 && (
         <div className="md:hidden space-y-3">
           {results.map((r, i) => (
-            <div key={i} className="glass rounded-2xl p-4 space-y-3">
+            <div key={r.guid || i} className="glass rounded-2xl p-4 space-y-3">
               <div>
                 <h3 className="text-[15px] font-semibold text-text-primary leading-snug line-clamp-2">
                   {r.title}
@@ -198,11 +272,12 @@ export function ProwlarrPage() {
                   variant="primary"
                   size="sm"
                   className="min-h-[44px] px-4"
-                  disabled={!r.magnetUrl?.startsWith("magnet:")}
+                  disabled={!r.magnetUrl && !r.downloadUrl}
+                  loading={addResultMutation.isPending}
                   onClick={() => handleAddToQbit(r)}
                   icon={<Download className="w-4 h-4" />}
                 >
-                  Add
+                  {S.addButton}
                 </Button>
               </div>
             </div>
@@ -236,7 +311,7 @@ export function ProwlarrPage() {
             <tbody>
               {results.map((r, i) => (
                 <tr
-                  key={i}
+                  key={r.guid || i}
                   className="border-b border-glass-border/50 hover:bg-glass-hover/30 transition-colors"
                 >
                   <td className="px-4 py-3">
@@ -262,15 +337,17 @@ export function ProwlarrPage() {
                     {r.leechers}
                   </td>
                   <td className="px-4 py-3 text-right text-text-muted text-xs">
-                    {new Date(r.publishDate).toLocaleDateString()}
+                    {r.publishDate
+                      ? new Date(r.publishDate).toLocaleDateString()
+                      : "-"}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button
                       type="button"
                       onClick={() => handleAddToQbit(r)}
-                      disabled={!r.magnetUrl?.startsWith("magnet:")}
+                      disabled={(!r.magnetUrl && !r.downloadUrl) || addResultMutation.isPending}
                       className="p-2 rounded-lg hover:bg-accent/10 text-text-muted hover:text-accent transition-colors disabled:opacity-30"
-                      title="Add to qBittorrent"
+                      title={S.addTitle}
                     >
                       <Download className="w-4 h-4" />
                     </button>
@@ -282,10 +359,10 @@ export function ProwlarrPage() {
         </div>
       )}
 
-      {results.length === 0 && !loading && query && (
+      {results.length === 0 && !loading && hasSearched && !searchError && (
         <div className="glass rounded-xl p-12 text-center">
           <Search className="w-12 h-12 mx-auto mb-3 text-text-muted opacity-30" />
-          <p className="text-text-secondary">No results found</p>
+          <p className="text-text-secondary">{S.noResults}</p>
         </div>
       )}
     </div>

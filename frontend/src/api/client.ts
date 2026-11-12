@@ -12,6 +12,11 @@ import type {
   DriveListResponse,
   DriveStorageQuota,
   DriveUploadProgress,
+  ProwlarrAddPayload,
+  ProwlarrConfigPayload,
+  ProwlarrConfigResponse,
+  ProwlarrSearchResult,
+  ProwlarrTestResponse,
 } from "@/types";
 
 export function createApiClient(baseUrl: string, apiPrefix = "/api/v1"): AxiosInstance {
@@ -328,6 +333,58 @@ export class DriveApi {
       { folder_id: folderId, folder_name: folderName }
     );
     return data;
+  }
+}
+
+export class ProwlarrApi {
+  private client: AxiosInstance;
+
+  constructor(baseUrl: string, apiPrefix = "/api/v1") {
+    this.client = createApiClient(baseUrl, apiPrefix);
+  }
+
+  async getConfig(): Promise<ProwlarrConfigResponse> {
+    const { data } = await this.client.get<ProwlarrConfigResponse>("/prowlarr/config");
+    return data;
+  }
+
+  async saveConfig(payload: ProwlarrConfigPayload): Promise<ProwlarrConfigResponse> {
+    const { data } = await this.client.put<ProwlarrConfigResponse>("/prowlarr/config", payload);
+    return data;
+  }
+
+  async deleteConfig(): Promise<ProwlarrConfigResponse> {
+    const { data } = await this.client.delete<ProwlarrConfigResponse>("/prowlarr/config");
+    return data;
+  }
+
+  async testConnection(payload?: {
+    url?: string;
+    api_key?: string;
+  }): Promise<ProwlarrTestResponse> {
+    const { data } = await this.client.post<ProwlarrTestResponse>(
+      "/prowlarr/test",
+      payload ?? {}
+    );
+    return data;
+  }
+
+  async search(params: {
+    query: string;
+    type?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ProwlarrSearchResult[]> {
+    const { data } = await this.client.get<ProwlarrSearchResult[]>("/prowlarr/search", {
+      params,
+      timeout: 35000,
+    });
+    return data;
+  }
+
+  async addToQbit(payload: ProwlarrAddPayload): Promise<TorrentActionResponse> {
+    const { data } = await this.client.post<TorrentActionResponse>("/prowlarr/add", payload);
+    return normalizeTorrentActionResponse(data, "Torrent added to qBittorrent!");
   }
 }
 
