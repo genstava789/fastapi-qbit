@@ -70,14 +70,14 @@ export function TorrentsPage() {
 
   const handleBatchDriveUpload = () => {
     if (!driveAuth?.authenticated) {
-      toast("Silakan hubungkan Google Drive terlebih dahulu", { icon: "🔐" });
+      toast("Please connect Google Drive first", { icon: "🔐" });
       setDriveAuthModalOpen(true);
       return;
     }
 
     if (completedSelected.length === 0) {
       toast.error(
-        "Hanya torrent yang berstatus Complete yang dapat diunggah ke Google Drive."
+        "Only completed torrents can be uploaded to Google Drive."
       );
       return;
     }
@@ -169,8 +169,8 @@ export function TorrentsPage() {
             />
             <span className="text-xs sm:text-sm font-medium text-text-primary">
               {selectedArray.length > 0
-                ? `${selectedArray.length} dipilih`
-                : `Semua (${filtered.length})`}
+                ? `${selectedArray.length} selected`
+                : `All (${filtered.length})`}
             </span>
           </label>
 
@@ -220,7 +220,7 @@ export function TorrentsPage() {
                   className="min-h-[38px] px-2.5 sm:px-3 text-xs text-accent hover:text-accent-hover hover:border-accent/40"
                   icon={<UploadCloud className="w-4 h-4 text-accent" />}
                   onClick={handleBatchDriveUpload}
-                  title={`Upload ${completedSelected.length} completed torrent ke Google Drive`}
+                  title={`Upload ${completedSelected.length} completed torrents to Google Drive`}
                 >
                   <span className="hidden xs:inline">Upload to Drive</span>
                 </Button>
@@ -235,25 +235,25 @@ export function TorrentsPage() {
               }}
               className="px-3 min-h-[38px] rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-xs font-medium text-text-primary transition-colors"
             >
-              Selesai
+              Done
             </button>
           </div>
         </div>
       ) : (
-        /* Normal Mode: Clean Bar with [Pilih] button */
+        /* Normal Mode: Clean Bar with [Select] button */
         <div className="flex items-center justify-between gap-2 text-xs text-text-muted">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setIsSelectMode(true)}
               className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium"
-              title="Pilih beberapa torrent"
+              title="Select torrents"
             >
               <CheckSquare className="w-3.5 h-3.5 text-accent" />
-              <span>Pilih</span>
+              <span>Select</span>
             </button>
             <span className="text-[11px] text-text-muted">
-              {filtered.length} torrent
+              {filtered.length} torrents
             </span>
           </div>
         </div>

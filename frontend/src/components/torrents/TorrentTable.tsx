@@ -499,37 +499,6 @@ export function TorrentTable({
     <>
       {/* MOBILE VIEW: Thumb-Friendly Card Layout */}
       <div className="md:hidden space-y-3">
-        {isSelectMode && visibleTorrents.length > 0 && (
-          <div className="flex items-center justify-between px-1">
-            <button
-              type="button"
-              onClick={() =>
-                allVisibleSelected
-                  ? clearSelection()
-                  : selectAll(visibleTorrents.map((t) => t.hash))
-              }
-              className="h-10 px-3 rounded-xl glass text-xs font-medium text-text-secondary flex items-center gap-2 active:bg-glass-hover"
-            >
-              <span
-                className={cn(
-                  "w-4 h-4 rounded border flex items-center justify-center",
-                  allVisibleSelected
-                    ? "bg-accent border-accent text-white"
-                    : "border-text-muted/60"
-                )}
-              >
-                {allVisibleSelected && <Check className="w-3 h-3 stroke-[3]" />}
-              </span>
-              {allVisibleSelected
-                ? "Deselect All"
-                : `Select Page (${visibleTorrents.length})`}
-            </button>
-            <span className="text-xs text-text-muted">
-              Mode pilih aktif
-            </span>
-          </div>
-        )}
-
         {visibleTorrents.map((t) => {
           const driveInfo = getDriveInfo(t);
           return (
