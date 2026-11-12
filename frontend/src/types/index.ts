@@ -20,6 +20,7 @@ export interface TorrentItem {
   eta: number;
   save_path: string;
   content_path?: string;
+  ratio?: number;
 }
 
 export interface HealthStatus {

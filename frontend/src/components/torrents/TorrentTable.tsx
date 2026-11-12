@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
   formatBytes,
@@ -6,6 +6,7 @@ import {
   formatEta,
   getTorrentStateLabel,
   paginateItems,
+  calculateTorrentRatio,
 } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
 import { usePauseTorrent, useResumeTorrent, useApi } from "@/hooks/useTorrents";
@@ -69,13 +70,9 @@ function getBadgeVariant(state: string) {
   return "info" as const;
 }
 
-function calculateRatio(t: TorrentItem): string {
-  if (t.downloaded <= 0) return t.uploaded > 0 ? "∞" : "0.00";
-  return (t.uploaded / t.downloaded).toFixed(2);
-}
-
 interface MobileTorrentCardProps {
   torrent: TorrentItem;
+  ratio: string;
   isSelected: boolean;
   selectionMode: boolean;
   onToggleSelect: () => void;
@@ -87,6 +84,7 @@ interface MobileTorrentCardProps {
 
 function MobileTorrentCard({
   torrent,
+  ratio,
   isSelected,
   selectionMode,
   onToggleSelect,
@@ -215,7 +213,7 @@ function MobileTorrentCard({
             Ratio
           </p>
           <p className="text-sm font-mono font-semibold text-text-primary mt-0.5">
-            {calculateRatio(torrent)}
+            {ratio}
           </p>
         </div>
         <div>
@@ -288,9 +286,29 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
   const selectAll = useAppStore((s) => s.selectAllTorrents);
   const clearSelection = useAppStore((s) => s.clearSelection);
   const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
+  const saveTorrentRatio = useAppStore((s) => s.saveTorrentRatio);
+  const getTorrentRatio = useAppStore((s) => s.getTorrentRatio);
   const pauseMutation = usePauseTorrent();
   const resumeMutation = useResumeTorrent();
   const api = useApi();
+
+  const getRatio = useCallback(
+    (t: TorrentItem): string => {
+      const cached = getTorrentRatio(t.hash, t.name);
+      return calculateTorrentRatio(t, cached);
+    },
+    [getTorrentRatio]
+  );
+
+  useEffect(() => {
+    if (!torrents || torrents.length === 0) return;
+    for (const t of torrents) {
+      const r = parseFloat(getRatio(t));
+      if (!isNaN(r) && r > 0) {
+        saveTorrentRatio(t.hash, t.name, r);
+      }
+    }
+  }, [torrents, saveTorrentRatio, getRatio]);
 
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
@@ -340,6 +358,11 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
       );
     }
     list.sort((a, b) => {
+      if (sortKey === "ratio") {
+        const aRatio = parseFloat(getRatio(a)) || 0;
+        const bRatio = parseFloat(getRatio(b)) || 0;
+        return sortDir === "asc" ? aRatio - bRatio : bRatio - aRatio;
+      }
       const aVal = a[sortKey];
       const bVal = b[sortKey];
       if (typeof aVal === "string" && typeof bVal === "string") {
@@ -352,7 +375,7 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
         : (bVal as number) - (aVal as number);
     });
     return list;
-  }, [torrents, searchQuery, sortKey, sortDir]);
+  }, [torrents, searchQuery, sortKey, sortDir, getRatio]);
 
   const pagination = useMemo(
     () => paginateItems(filtered, page, PAGE_SIZE),
@@ -417,6 +440,7 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
           <MobileTorrentCard
             key={t.hash}
             torrent={t}
+            ratio={getRatio(t)}
             isSelected={selectedTorrents.has(t.hash)}
             selectionMode={selectionMode}
             onToggleSelect={() => toggleSelection(t.hash)}
@@ -494,6 +518,19 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
                     />
                   </div>
                 </th>
+                <th
+                  className="px-4 py-3 text-right w-20 cursor-pointer hover:text-text-primary transition-colors"
+                  onClick={() => toggleSort("ratio")}
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    Ratio{" "}
+                    <SortIcon
+                      col="ratio"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                    />
+                  </div>
+                </th>
                 <th className="px-4 py-3 text-right w-28">
                   <div className="flex items-center justify-end gap-1">
                     <Download className="w-3 h-3" /> Speed
@@ -554,6 +591,18 @@ export function TorrentTable({ torrents, filterKey = "all" }: TorrentTableProps)
                   </td>
                   <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">
                     {formatBytes(t.total_size)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-xs">
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        parseFloat(getRatio(t)) >= 1.0
+                          ? "text-success"
+                          : "text-text-secondary"
+                      )}
+                    >
+                      {getRatio(t)}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-accent font-mono text-xs">

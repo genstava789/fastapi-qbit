@@ -59,11 +59,16 @@ interface AppState {
   driveDefaultFolderId: string | null;
   driveDefaultFolderName: string | null;
   setDriveDefaultFolder: (id: string | null, name: string | null) => void;
+
+  // Reseed ratio tracking
+  reseedRatios: Record<string, number>;
+  saveTorrentRatio: (hash: string, name: string, ratio: number) => void;
+  getTorrentRatio: (hash?: string, name?: string) => number | undefined;
 }
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Multi-instance with Default VPS loaded
       instances: DEFAULT_INSTANCES,
       activeInstanceId: "default-vps",
@@ -138,6 +143,29 @@ export const useAppStore = create<AppState>()(
       driveDefaultFolderName: null,
       setDriveDefaultFolder: (id, name) =>
         set({ driveDefaultFolderId: id, driveDefaultFolderName: name }),
+
+      // Reseed ratio tracking
+      reseedRatios: {},
+      saveTorrentRatio: (hash, name, ratio) => {
+        if (!ratio || ratio <= 0 || isNaN(ratio)) return;
+        set((state) => {
+          const current = state.reseedRatios || {};
+          const existingHash = hash ? current[hash] || 0 : 0;
+          const existingName = name ? current[name] || 0 : 0;
+          const maxVal = Math.max(ratio, existingHash, existingName);
+          const next = { ...current };
+          if (hash) next[hash] = maxVal;
+          if (name) next[name] = maxVal;
+          return { reseedRatios: next };
+        });
+      },
+      getTorrentRatio: (hash, name) => {
+        const ratios = get().reseedRatios || {};
+        const byHash = hash ? ratios[hash] : undefined;
+        const byName = name ? ratios[name] : undefined;
+        const val = Math.max(byHash || 0, byName || 0);
+        return val > 0 ? val : undefined;
+      },
     }),
     {
       name: "qbit-ui-storage",
@@ -147,6 +175,7 @@ export const useAppStore = create<AppState>()(
         sidebarOpen: state.sidebarOpen,
         driveDefaultFolderId: state.driveDefaultFolderId,
         driveDefaultFolderName: state.driveDefaultFolderName,
+        reseedRatios: state.reseedRatios,
       }),
     }
   )

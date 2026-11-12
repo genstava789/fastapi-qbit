@@ -152,6 +152,12 @@ class QBitService:
 
         items = []
         for t in torrents:
+            raw_ratio = getattr(t, "ratio", None)
+            parsed_ratio = None
+            if raw_ratio is not None and isinstance(raw_ratio, (int, float)):
+                if raw_ratio >= 0 and raw_ratio < 999:
+                    parsed_ratio = round(float(raw_ratio), 2)
+
             items.append(
                 {
                     "hash": t.hash,
@@ -166,6 +172,7 @@ class QBitService:
                     "eta": t.eta,
                     "save_path": t.save_path,
                     "content_path": getattr(t, "content_path", None),
+                    "ratio": parsed_ratio,
                 }
             )
         return items
@@ -177,6 +184,12 @@ class QBitService:
         if not results:
             return None
         t = results[0]
+        raw_ratio = getattr(t, "ratio", None)
+        parsed_ratio = None
+        if raw_ratio is not None and isinstance(raw_ratio, (int, float)):
+            if raw_ratio >= 0 and raw_ratio < 999:
+                parsed_ratio = round(float(raw_ratio), 2)
+
         return {
             "hash": t.hash,
             "name": t.name,
@@ -190,6 +203,7 @@ class QBitService:
             "eta": t.eta,
             "save_path": t.save_path,
             "content_path": getattr(t, "content_path", None),
+            "ratio": parsed_ratio,
         }
 
     def pause_torrent(self, torrent_hash: str) -> None:

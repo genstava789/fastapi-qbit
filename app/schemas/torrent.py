@@ -55,6 +55,7 @@ class TorrentItemResponse(BaseModel):
     eta: int
     save_path: str
     content_path: Optional[str] = None
+    ratio: Optional[float] = None
 
 
 class TorrentActionResponse(BaseModel):

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Modal, Button, ProgressBar, Badge, TorrentDetailSkeleton } from "@/components/ui";
 import {
   useTorrentDetail,
@@ -11,6 +12,7 @@ import {
   formatSpeed,
   formatEta,
   getTorrentStateLabel,
+  calculateTorrentRatio,
 } from "@/lib/utils";
 import {
   Play,
@@ -35,14 +37,23 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
   const pauseMutation = usePauseTorrent();
   const resumeMutation = useResumeTorrent();
   const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
+  const getTorrentRatio = useAppStore((s) => s.getTorrentRatio);
+  const saveTorrentRatio = useAppStore((s) => s.saveTorrentRatio);
   const api = useApi();
 
-  if (!hash) return null;
+  const cachedRatio = torrent ? getTorrentRatio(torrent.hash, torrent.name) : undefined;
+  const ratio = torrent ? calculateTorrentRatio(torrent, cachedRatio) : "0.00";
 
-  const ratio =
-    torrent && torrent.downloaded > 0
-      ? (torrent.uploaded / torrent.downloaded).toFixed(2)
-      : "0.00";
+  useEffect(() => {
+    if (torrent) {
+      const numRatio = parseFloat(ratio);
+      if (!isNaN(numRatio) && numRatio > 0) {
+        saveTorrentRatio(torrent.hash, torrent.name, numRatio);
+      }
+    }
+  }, [torrent, ratio, saveTorrentRatio]);
+
+  if (!hash) return null;
 
   return (
     <Modal open={!!hash} onClose={onClose} title="Torrent Details" size="lg">

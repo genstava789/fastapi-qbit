@@ -104,4 +104,21 @@ describe("useAppStore", () => {
     expect(useAppStore.getState().addTorrentModalOpen).toBe(false);
     expect(useAppStore.getState().addTorrentPrefill).toBeNull();
   });
+
+  it("persists and retrieves torrent ratios across re-seeds by hash and title", () => {
+    const store = useAppStore.getState();
+    store.saveTorrentRatio("hash123", "Ubuntu 24.04 ISO", 1.85);
+
+    // Can lookup by hash
+    expect(useAppStore.getState().getTorrentRatio("hash123")).toBe(1.85);
+    // Can lookup by name for re-seeds
+    expect(useAppStore.getState().getTorrentRatio(undefined, "Ubuntu 24.04 ISO")).toBe(1.85);
+
+    // When re-seed hash is new, title lookup preserves the ratio
+    expect(useAppStore.getState().getTorrentRatio("newHash456", "Ubuntu 24.04 ISO")).toBe(1.85);
+
+    // Updates to higher ratio without regressing
+    store.saveTorrentRatio("newHash456", "Ubuntu 24.04 ISO", 2.1);
+    expect(useAppStore.getState().getTorrentRatio("newHash456", "Ubuntu 24.04 ISO")).toBe(2.1);
+  });
 });

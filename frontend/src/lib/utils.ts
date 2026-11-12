@@ -140,6 +140,75 @@ export function paginateItems<T>(
 }
 
 /**
+ * Calculates the share ratio of a torrent.
+ * Handles re-seed torrents (where downloaded is 0 or reset),
+ * native qBittorrent ratio, and cached historical ratios so ratios
+ * never disappear or reset on re-seed.
+ */
+export function calculateTorrentRatio(
+  torrent: {
+    downloaded?: number;
+    uploaded?: number;
+    total_size?: number;
+    progress?: number;
+    ratio?: number;
+  },
+  cachedRatio?: number
+): string {
+  const uploaded = torrent.uploaded || 0;
+  const downloaded = torrent.downloaded || 0;
+  const totalSize = torrent.total_size || 0;
+  const nativeRatio =
+    torrent.ratio !== undefined && torrent.ratio > 0 && torrent.ratio < 999
+      ? torrent.ratio
+      : undefined;
+
+  let currentRatio: number | undefined = undefined;
+
+  // 1. If qBittorrent native ratio is available and valid
+  if (nativeRatio !== undefined) {
+    currentRatio = nativeRatio;
+  }
+  // 2. Normal torrent with downloaded bytes from peers
+  else if (downloaded > 0) {
+    currentRatio = uploaded / downloaded;
+  }
+  // 3. Re-seed mode: files already exist on disk (downloaded <= 0)
+  // Share ratio is calculated against completed file size on disk
+  else if (totalSize > 0 && uploaded > 0) {
+    currentRatio = uploaded / totalSize;
+  }
+
+  // If we have a cached prior ratio from before the reseed / recheck
+  if (cachedRatio !== undefined && cachedRatio > 0) {
+    if (currentRatio === undefined || currentRatio <= 0) {
+      return cachedRatio.toFixed(2);
+    }
+    // If the torrent was re-added or re-checked, uploaded may be session-only or reset.
+    // Ensure the ratio does not regress below the previously achieved ratio.
+    const effectiveRatio = Math.max(
+      currentRatio,
+      downloaded <= 0 && totalSize > 0
+        ? cachedRatio + uploaded / totalSize
+        : cachedRatio
+    );
+    return effectiveRatio.toFixed(2);
+  }
+
+  if (currentRatio !== undefined) {
+    return currentRatio.toFixed(2);
+  }
+
+  // Fallback for uploaded without size / download
+  if (uploaded > 0) {
+    return "∞";
+  }
+
+  return "0.00";
+}
+
+
+/**
  * Checks if a string representation of qBittorrent result or error message
  * corresponds to a successful TorrentsAddedMetadata response.
  */

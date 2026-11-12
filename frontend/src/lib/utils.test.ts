@@ -11,6 +11,7 @@ import {
   isTorrentsAddedMetadataSuccess,
   isTorrentAddSuccess,
   normalizeTorrentActionResponse,
+  calculateTorrentRatio,
 } from "./utils";
 import type { TorrentItem } from "@/types";
 
@@ -187,6 +188,72 @@ describe("utils formatting", () => {
       });
       expect(genuineFailure.success).toBe(false);
       expect(genuineFailure.message).toBe("Network error");
+    });
+  });
+
+  describe("calculateTorrentRatio", () => {
+    it("calculates normal download ratio accurately", () => {
+      expect(calculateTorrentRatio({ downloaded: 1000, uploaded: 1500 })).toBe("1.50");
+      expect(calculateTorrentRatio({ downloaded: 2000, uploaded: 1000 })).toBe("0.50");
+    });
+
+    it("calculates re-seed ratio against total_size when downloaded is 0", () => {
+      // Re-seed torrent with 0 downloaded bytes
+      expect(
+        calculateTorrentRatio({
+          downloaded: 0,
+          uploaded: 500,
+          total_size: 1000,
+        })
+      ).toBe("0.50");
+      expect(
+        calculateTorrentRatio({
+          downloaded: 0,
+          uploaded: 2000,
+          total_size: 1000,
+        })
+      ).toBe("2.00");
+    });
+
+    it("preserves previous ratio on re-seed when downloaded is 0 and uploaded reset", () => {
+      // Torrent was reseeded or is checking; downloaded & uploaded temporarily 0
+      expect(
+        calculateTorrentRatio(
+          {
+            downloaded: 0,
+            uploaded: 0,
+            total_size: 1000,
+          },
+          1.75
+        )
+      ).toBe("1.75");
+    });
+
+    it("accumulates new reseed uploads seamlessly on top of cached prior ratio", () => {
+      // Torrent had 1.50 ratio before reseed, now uploads 200MB more on 1000MB torrent
+      expect(
+        calculateTorrentRatio(
+          {
+            downloaded: 0,
+            uploaded: 200,
+            total_size: 1000,
+          },
+          1.5
+        )
+      ).toBe("1.70");
+    });
+
+    it("respects native qBittorrent ratio if available and valid", () => {
+      expect(calculateTorrentRatio({ ratio: 2.345, downloaded: 1000, uploaded: 2345 })).toBe(
+        "2.35"
+      );
+    });
+
+    it("handles zero and infinite edge cases cleanly", () => {
+      expect(calculateTorrentRatio({ downloaded: 0, uploaded: 0 })).toBe("0.00");
+      expect(calculateTorrentRatio({ downloaded: 0, uploaded: 500, total_size: 0 })).toBe(
+        "∞"
+      );
     });
   });
 });
