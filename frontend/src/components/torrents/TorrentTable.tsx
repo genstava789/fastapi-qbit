@@ -332,28 +332,16 @@ function MobileTorrentCard({
           <p className="text-sm font-mono font-semibold text-text-primary mt-0.5 whitespace-nowrap">
             <span
               className="text-success font-semibold"
-              title={`Seeds: ${torrent.num_seeds ?? 0} connected${torrent.num_complete && torrent.num_complete > 0 ? ` (${torrent.num_complete} in swarm)` : ""}`}
+              title={`Seeds: ${Math.max(torrent.num_seeds ?? 0, torrent.num_complete ?? 0)}`}
             >
-              {torrent.num_seeds ?? 0}
-              {torrent.num_complete && torrent.num_complete > 0 ? (
-                <span className="text-text-muted text-[11px] font-normal">
-                  ({torrent.num_complete})
-                </span>
-              ) : null}
-              <span className="text-[10px] text-text-muted font-normal ml-0.5">S</span>
+              {Math.max(torrent.num_seeds ?? 0, torrent.num_complete ?? 0)}
             </span>
-            <span className="text-text-muted font-normal mx-1">·</span>
+            <span className="text-text-muted font-normal mx-0.5">/</span>
             <span
               className="text-danger font-semibold"
-              title={`Leechers: ${torrent.num_leechs ?? 0} connected${torrent.num_incomplete && torrent.num_incomplete > 0 ? ` (${torrent.num_incomplete} in swarm)` : ""}`}
+              title={`Leechers: ${Math.max(torrent.num_leechs ?? 0, torrent.num_incomplete ?? 0)}`}
             >
-              {torrent.num_leechs ?? 0}
-              {torrent.num_incomplete && torrent.num_incomplete > 0 ? (
-                <span className="text-text-muted text-[11px] font-normal">
-                  ({torrent.num_incomplete})
-                </span>
-              ) : null}
-              <span className="text-[10px] text-text-muted font-normal ml-0.5">L</span>
+              {Math.max(torrent.num_leechs ?? 0, torrent.num_incomplete ?? 0)}
             </span>
           </p>
         </div>
@@ -545,13 +533,13 @@ export function TorrentTable({
         return sortDir === "asc" ? aRatio - bRatio : bRatio - aRatio;
       }
       if (sortKey === "num_seeds") {
-        const aSeeds = (a.num_seeds ?? 0) > 0 ? (a.num_seeds ?? 0) : (a.num_complete ?? 0);
-        const bSeeds = (b.num_seeds ?? 0) > 0 ? (b.num_seeds ?? 0) : (b.num_complete ?? 0);
+        const aSeeds = Math.max(a.num_seeds ?? 0, a.num_complete ?? 0);
+        const bSeeds = Math.max(b.num_seeds ?? 0, b.num_complete ?? 0);
         return sortDir === "asc" ? aSeeds - bSeeds : bSeeds - aSeeds;
       }
       if (sortKey === "num_leechs") {
-        const aLeechs = (a.num_leechs ?? 0) > 0 ? (a.num_leechs ?? 0) : (a.num_incomplete ?? 0);
-        const bLeechs = (b.num_leechs ?? 0) > 0 ? (b.num_leechs ?? 0) : (b.num_incomplete ?? 0);
+        const aLeechs = Math.max(a.num_leechs ?? 0, a.num_incomplete ?? 0);
+        const bLeechs = Math.max(b.num_leechs ?? 0, b.num_incomplete ?? 0);
         return sortDir === "asc" ? aLeechs - bLeechs : bLeechs - aLeechs;
       }
       const aVal = a[sortKey as keyof TorrentItem];
@@ -853,23 +841,17 @@ export function TorrentTable({
                     <td className="px-4 py-3 text-right font-mono text-xs whitespace-nowrap">
                       <span
                         className="text-success font-semibold"
-                        title={`Seeds: ${t.num_seeds ?? 0} connected${t.num_complete && t.num_complete > 0 ? ` (${t.num_complete} in swarm)` : ""}`}
+                        title={`Seeds: ${Math.max(t.num_seeds ?? 0, t.num_complete ?? 0)}`}
                       >
-                        {t.num_seeds ?? 0}
-                        {t.num_complete && t.num_complete > 0 ? (
-                          <span className="text-text-muted text-[11px]"> ({t.num_complete})</span>
-                        ) : null}
+                        {Math.max(t.num_seeds ?? 0, t.num_complete ?? 0)}
                         <span className="text-[10px] text-text-muted ml-0.5 font-normal">S</span>
                       </span>
                       <span className="text-text-muted mx-1.5 font-normal">·</span>
                       <span
                         className="text-danger font-semibold"
-                        title={`Leechers: ${t.num_leechs ?? 0} connected${t.num_incomplete && t.num_incomplete > 0 ? ` (${t.num_incomplete} in swarm)` : ""}`}
+                        title={`Leechers: ${Math.max(t.num_leechs ?? 0, t.num_incomplete ?? 0)}`}
                       >
-                        {t.num_leechs ?? 0}
-                        {t.num_incomplete && t.num_incomplete > 0 ? (
-                          <span className="text-text-muted text-[11px]"> ({t.num_incomplete})</span>
-                        ) : null}
+                        {Math.max(t.num_leechs ?? 0, t.num_incomplete ?? 0)}
                         <span className="text-[10px] text-text-muted ml-0.5 font-normal">L</span>
                       </span>
                     </td>
