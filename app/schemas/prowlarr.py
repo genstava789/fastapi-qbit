@@ -4,12 +4,27 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def validate_http_url(url: str) -> str:
-    """Validate and normalize an HTTP/HTTPS URL, stripping trailing slashes."""
+    """Validate and normalize an HTTP/HTTPS URL, stripping trailing slashes and redundant /api/v1."""
     trimmed = url.strip().rstrip("/")
     parsed = urlparse(trimmed)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError("Invalid URL: must start with http:// or https:// and include a host.")
+    for suffix in ("/api/v1", "/api"):
+        if trimmed.endswith(suffix):
+            trimmed = trimmed[:-len(suffix)].rstrip("/")
     return trimmed
+
+
+def sanitize_api_key(v: Optional[str]) -> Optional[str]:
+    """Sanitize API key input, stripping quotes and treating masked keys as None."""
+    if v is None:
+        return None
+    stripped = v.strip().strip('"').strip("'")
+    if not stripped:
+        return None
+    if "*" in stripped:
+        return None
+    return stripped
 
 
 class ProwlarrConfigRequest(BaseModel):
@@ -31,10 +46,7 @@ class ProwlarrConfigRequest(BaseModel):
     @field_validator("api_key")
     @classmethod
     def check_api_key(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return None
-        stripped = v.strip()
-        return stripped or None
+        return sanitize_api_key(v)
 
 
 class ProwlarrConfigResponse(BaseModel):
@@ -65,10 +77,7 @@ class ProwlarrTestRequest(BaseModel):
     @field_validator("api_key")
     @classmethod
     def check_optional_api_key(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return None
-        stripped = v.strip()
-        return stripped or None
+        return sanitize_api_key(v)
 
 
 class ProwlarrTestResponse(BaseModel):

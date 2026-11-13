@@ -26,6 +26,16 @@ class ProwlarrUpstreamError(RuntimeError):
         self.status_code = status_code
 
 
+def _clean_api_key(api_key: Optional[str]) -> Optional[str]:
+    """Clean and validate an API key, treating masked values with asterisks as None."""
+    if not api_key or not isinstance(api_key, str):
+        return None
+    cleaned = api_key.strip().strip('"').strip("'")
+    if not cleaned or "*" in cleaned:
+        return None
+    return cleaned
+
+
 def mask_api_key(api_key: Optional[str]) -> Optional[str]:
     """Return a masked representation of the API key for safe display."""
     if not api_key:
@@ -107,7 +117,8 @@ class ProwlarrService:
         """Validate and persist Prowlarr URL and API key."""
         normalized_url = validate_http_url(url)
         _, existing_key = self.get_raw_config()
-        resolved_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else existing_key
+        clean_input_key = _clean_api_key(api_key)
+        resolved_key = clean_input_key if clean_input_key else existing_key
         if not resolved_key:
             raise ValueError("Prowlarr API key is required.")
 
@@ -179,7 +190,8 @@ class ProwlarrService:
         """Verify connectivity and authentication against Prowlarr system status."""
         saved_url, saved_key = self.get_raw_config()
         target_url = validate_http_url(url) if url else saved_url
-        target_key = api_key.strip() if api_key and api_key.strip() else saved_key
+        clean_input_key = _clean_api_key(api_key)
+        target_key = clean_input_key if clean_input_key else saved_key
 
         if not target_url or not target_key:
             raise ProwlarrNotConfiguredError(
@@ -189,7 +201,11 @@ class ProwlarrService:
         endpoint = f"{target_url}/api/v1/system/status"
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get(endpoint, headers={"X-Api-Key": target_key})
+                response = await client.get(
+                    endpoint,
+                    headers={"X-Api-Key": target_key},
+                    params={"apikey": target_key},
+                )
         except httpx.TimeoutException as exc:
             raise ProwlarrUpstreamError("Connection to Prowlarr timed out.", status_code=504) from exc
         except httpx.RequestError as exc:
@@ -232,6 +248,7 @@ class ProwlarrService:
             ("type", search_type),
             ("limit", str(limit)),
             ("offset", str(offset)),
+            ("apikey", api_key),
         ]
         for category_id in categories or []:
             params.append(("categories", str(category_id)))

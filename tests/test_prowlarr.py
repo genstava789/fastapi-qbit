@@ -77,6 +77,16 @@ async def test_prowlarr_config_lifecycle(isolated_prowlarr_settings):
         assert updated.json()["url"] == "http://127.0.0.1:9696"
         assert updated.json()["api_key_masked"] == "1234********cdef"
 
+        # Updating with masked key retains the actual saved key
+        masked_update = await client.put(
+            "/api/v1/prowlarr/config",
+            json={"url": "http://127.0.0.1:9696/api/v1", "api_key": "1234********cdef"},
+        )
+        assert masked_update.status_code == 200
+        assert masked_update.json()["url"] == "http://127.0.0.1:9696"
+        persisted_masked = json.loads(isolated_prowlarr_settings.read_text(encoding="utf-8"))
+        assert persisted_masked["api_key"] == "1234567890abcdef"
+
         # Clear config
         cleared = await client.delete("/api/v1/prowlarr/config")
         assert cleared.status_code == 200
@@ -129,6 +139,19 @@ async def test_prowlarr_test_connection(monkeypatch):
         }
         assert captured["url"] == "https://prowlarr.local/api/v1/system/status"
         assert captured["headers"] == {"X-Api-Key": "secret-key-9999"}
+
+        # Testing with saved config and masked key passes saved real key
+        await client.put(
+            "/api/v1/prowlarr/config",
+            json={"url": "https://prowlarr.saved.local", "api_key": "saved-actual-secret"},
+        )
+        masked_test_res = await client.post(
+            "/api/v1/prowlarr/test",
+            json={"url": "https://prowlarr.saved.local/api/v1", "api_key": "save********cret"},
+        )
+        assert masked_test_res.status_code == 200
+        assert captured["url"] == "https://prowlarr.saved.local/api/v1/system/status"
+        assert captured["headers"] == {"X-Api-Key": "saved-actual-secret"}
 
 
 @pytest.mark.anyio

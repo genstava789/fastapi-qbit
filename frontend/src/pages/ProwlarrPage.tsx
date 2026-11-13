@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Input, Badge } from "@/components/ui";
 import {
   Search,
@@ -38,12 +38,15 @@ export function ProwlarrPage() {
   const [editingConfig, setEditingConfig] = useState(false);
 
   const [urlDraft, setUrlDraft] = useState<string | null>(null);
-  const [prowlarrApiKey, setProwlarrApiKey] = useState(
-    () => localStorage.getItem("prowlarr_apikey") || ""
-  );
+  const [prowlarrApiKey, setProwlarrApiKey] = useState("");
 
-  const prowlarrUrl =
-    urlDraft ?? config?.url ?? localStorage.getItem("prowlarr_url") ?? "";
+  // Purge legacy client-side localStorage keys from earlier versions
+  useEffect(() => {
+    localStorage.removeItem("prowlarr_apikey");
+    localStorage.removeItem("prowlarr_url");
+  }, []);
+
+  const prowlarrUrl = urlDraft ?? config?.url ?? "";
   const configured = Boolean(config?.configured);
   const showSetup = !configured || editingConfig;
   const canSaveConfig =
@@ -51,11 +54,19 @@ export function ProwlarrPage() {
     Boolean(prowlarrUrl.trim()) &&
     (Boolean(prowlarrApiKey.trim()) || Boolean(config?.has_api_key));
 
+  const sanitizeKey = (key: string) => {
+    const trimmed = key.trim().replace(/^["']|["']$/g, "");
+    if (!trimmed || trimmed.includes("*")) {
+      return undefined;
+    }
+    return trimmed;
+  };
+
   const handleSaveConfig = async () => {
     if (!canSaveConfig) return;
     await saveConfigMutation.mutateAsync({
       url: prowlarrUrl.trim(),
-      api_key: prowlarrApiKey.trim() || undefined,
+      api_key: sanitizeKey(prowlarrApiKey),
     });
     localStorage.removeItem("prowlarr_url");
     localStorage.removeItem("prowlarr_apikey");
@@ -64,11 +75,15 @@ export function ProwlarrPage() {
     setEditingConfig(false);
   };
 
-  const handleTestConnection = () => {
+  const handleTestConnection = (override?: { url?: string; apiKey?: string }) => {
     if (!api) return;
+    const urlToTest = (override?.url ?? prowlarrUrl).trim() || undefined;
+    const rawKey = override?.apiKey !== undefined ? override.apiKey : prowlarrApiKey;
+    const keyToTest = sanitizeKey(rawKey);
+
     testConnectionMutation.mutate({
-      url: prowlarrUrl.trim() || undefined,
-      api_key: prowlarrApiKey.trim() || undefined,
+      url: urlToTest,
+      api_key: keyToTest,
     });
   };
 
@@ -140,13 +155,18 @@ export function ProwlarrPage() {
                 config?.has_api_key ? S.apiKeyKeepPlaceholder : S.apiKeyPlaceholder
               }
               type="password"
+              autoComplete="new-password"
               value={prowlarrApiKey}
               onChange={(e) => setProwlarrApiKey(e.target.value)}
             />
             {config?.has_api_key && config.api_key_masked && (
-              <p className="text-xs text-text-muted font-mono">
-                {S.savedKeyLabel}: {config.api_key_masked}
-              </p>
+              <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                <CheckCircle2 className="w-3.5 h-3.5 text-success flex-shrink-0" />
+                <span>
+                  {S.savedKeyLabel}: <code className="font-mono text-text-secondary">{config.api_key_masked}</code>
+                  <span className="text-text-muted ml-1">({S.savedKeyNotice})</span>
+                </span>
+              </div>
             )}
           </div>
 
@@ -163,7 +183,7 @@ export function ProwlarrPage() {
             <Button
               variant="secondary"
               className="min-h-[44px] w-full sm:w-auto"
-              onClick={handleTestConnection}
+              onClick={() => handleTestConnection()}
               loading={testConnectionMutation.isPending}
               disabled={!prowlarrUrl.trim() && !configured}
               icon={<CheckCircle2 className="w-4 h-4" />}
@@ -191,20 +211,42 @@ export function ProwlarrPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">{S.title}</h1>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold text-text-primary">{S.title}</h1>
+            <Badge
+              variant={testConnectionMutation.isSuccess ? "success" : "default"}
+              className="font-mono text-xs"
+            >
+              {testConnectionMutation.data?.version
+                ? `v${testConnectionMutation.data.version}`
+                : S.configuredBadge}
+            </Badge>
+          </div>
           <p className="text-sm text-text-secondary mt-1">{S.searchSubtitle}</p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="min-h-[44px]"
-          onClick={() => setEditingConfig(true)}
-          icon={<Settings className="w-4 h-4" />}
-        >
-          {S.configure}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="min-h-[40px]"
+            onClick={() => handleTestConnection()}
+            loading={testConnectionMutation.isPending}
+            icon={<CheckCircle2 className="w-4 h-4 text-success" />}
+          >
+            {S.testConnection}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="min-h-[40px]"
+            onClick={() => setEditingConfig(true)}
+            icon={<Settings className="w-4 h-4" />}
+          >
+            {S.configure}
+          </Button>
+        </div>
       </div>
 
       {/* Search Bar */}

@@ -114,6 +114,14 @@ async def test_gdrive_list_files_includes_hierarchy_metadata(monkeypatch):
             mapping = {
                 "root": {"id": "root_actual_id", "name": "My Drive"},
                 "sub_dl": {"id": "sub_dl", "name": "Download", "parents": ["root_actual_id"]},
+                "file_1": {
+                    "id": "file_1",
+                    "name": "episode01.mkv",
+                    "mimeType": "video/x-matroska",
+                    "size": "1234",
+                    "modifiedTime": "2026-11-12T10:00:00Z",
+                    "parents": ["sub_dl"],
+                },
             }
             return _FakeExec(mapping[fileId])
 
