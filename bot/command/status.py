@@ -1,5 +1,5 @@
-from datetime import datetime
 import logging
+import time
 from typing import Any, Dict, List, Tuple
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
@@ -11,14 +11,13 @@ from pyrogram.types import (
 )
 from app.services.qbit_service import qbit_service
 from bot.utils import (
-    escape_html,
-    format_bytes,
-    format_eta,
-    format_speed,
-    get_disk_space_info,
-    get_torrent_badge,
+    format_bytes_compact,
+    format_duration_id,
+    get_free_disk_space_compact,
+    get_host_uptime_id,
+    get_kaomoji_status,
     is_user_authorized,
-    make_progress_bar,
+    make_square_progress_bar,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,43 +58,131 @@ def categorize_torrents(
     return result
 
 
+def render_task_card(
+    t: Dict[str, Any],
+    version: str = "5.3.0",
+    default_user: str = "Kang Mirror",
+) -> str:
+    """Renders a single torrent task card in mirror leech format."""
+    name = t.get("name", "Unknown")
+    progress = float(t.get("progress", 0) or 0)
+    dl_speed = int(t.get("download_speed", 0) or 0)
+    up_speed = int(t.get("upload_speed", 0) or 0)
+    downloaded = int(t.get("downloaded", 0) or 0)
+    total_size = int(t.get("total_size", 0) or 0)
+    state = str(t.get("state", ""))
+    now_ts = int(time.time())
+    added_on = int(t.get("added_on") or now_ts)
+    elapsed_sec = max(0, now_ts - added_on)
+
+    # Task ID: deterministic 3-digit format (e.g. Kqng-017, Kqng-139, Kqng-502)
+    h = str(t.get("hash", "")).strip()
+    if h:
+        try:
+            num = int(h[:6], 16) % 1000
+            task_id = f"Kqng-{num:03d}"
+        except ValueError:
+            task_id = f"Kqng-{h[:4]}"
+    else:
+        task_id = "Kqng-001"
+
+    # Status kaomoji
+    kaomoji = get_kaomoji_status(state, dl_speed=dl_speed, progress=progress)
+
+    # Clean qBittorrent version
+    clean_version = version.lstrip("v") if version else "5.3.0"
+
+    # Elapsed and ETA
+    elapsed_str = format_duration_id(elapsed_sec)
+    eta_val = t.get("eta", 0)
+    if eta_val is not None and 0 < eta_val < 8640000:
+        eta_str = format_duration_id(eta_val)
+    elif eta_val is not None and eta_val >= 8640000:
+        eta_str = "100h"
+    elif progress >= 100:
+        eta_str = "0d"
+    else:
+        eta_str = "100h"
+
+    # Active speed
+    active_speed = dl_speed if dl_speed > 0 else up_speed
+    speed_str = f"{format_bytes_compact(active_speed)}/s"
+
+    # Seeds and Leechers
+    seeds = max(int(t.get("num_seeds", 0) or 0), int(t.get("num_complete", 0) or 0))
+    leechs = max(int(t.get("num_leechs", 0) or 0), int(t.get("num_incomplete", 0) or 0))
+
+    # User
+    task_user = t.get("category") or t.get("tags") or default_user
+
+    lines = [
+        name,
+        make_square_progress_bar(progress),
+        f"├ ID: {task_id}",
+        f"├ Status: * {kaomoji}",
+        f"├ Alat: qBittorrent {clean_version}",
+        f"├ Waktu: {elapsed_str} | {eta_str}",
+        f"├ Proses: {format_bytes_compact(downloaded)} / {format_bytes_compact(total_size)}",
+        f"├ Kecepatan: {speed_str}",
+    ]
+
+    if seeds > 0 or leechs > 0:
+        lines.append(f"├ Seeders: {seeds}")
+        lines.append(f"├ Leechers: {leechs}")
+
+    lines.append(f"├ User: {task_user}")
+    lines.append("└ * | *")
+
+    return "\n".join(lines)
+
+
 def build_status_keyboard(current_filter: str = "active") -> InlineKeyboardMarkup:
-    """Builds inline action keyboard for status view."""
+    """Builds full-width inline keyboard rows so buttons fill the entire message card width."""
     buttons = [
         [
             InlineKeyboardButton("🔄 Segarkan Status", callback_data=f"status_refresh:{current_filter}"),
         ],
         [
             InlineKeyboardButton(
-                "📥 Download" + (" ✓" if current_filter == "dl" else ""),
+                "📥 Unduhan Aktif" + (" ✓" if current_filter == "dl" else ""),
                 callback_data="status_filter:dl",
             ),
+        ],
+        [
             InlineKeyboardButton(
-                "📤 Upload" + (" ✓" if current_filter == "up" else ""),
+                "📤 Seeding Aktif" + (" ✓" if current_filter == "up" else ""),
                 callback_data="status_filter:up",
             ),
+        ],
+        [
             InlineKeyboardButton(
-                "📋 Semua" + (" ✓" if current_filter == "all" else ""),
+                "📋 Semua Task Torrent" + (" ✓" if current_filter == "all" else ""),
                 callback_data="status_filter:all",
             ),
         ],
     ]
     if current_filter != "active":
         buttons.append([
-            InlineKeyboardButton("⚡ Tampilan Ringkas (Aktif)", callback_data="status_filter:active")
+            InlineKeyboardButton("⚡ Kembali ke Tampilan Utama", callback_data="status_filter:active")
         ])
     return InlineKeyboardMarkup(buttons)
 
 
-def format_status_message(filter_type: str = "active") -> Tuple[str, InlineKeyboardMarkup]:
-    """Generates the formatted status message and inline keyboard."""
+def format_status_message(
+    filter_type: str = "active",
+    user_display_name: str = "Kang Mirror",
+) -> Tuple[str, InlineKeyboardMarkup]:
+    """Generates formatted status message in task card style with full-width keyboard."""
     connected, version = qbit_service.check_connection()
+    clean_version = (version or "5.3.0").lstrip("v")
+
     if not connected:
         text = (
-            "⚠️ <b>qBittorrent Status</b>\n\n"
-            "🔴 <b>Status: Offline / Tidak Terhubung</b>\n"
-            "Gagal menghubungi qBittorrent daemon.\n"
-            "Pastikan service qBittorrent sedang aktif pada server."
+            "qBittorrent Status\n"
+            "┌┤□□□□□□□□□□│ 0%\n"
+            "├ Status: * (ノ_<。)\n"
+            "├ Keterangan: Gagal terhubung ke daemon qBittorrent\n"
+            "└ * | *"
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Coba Lagi", callback_data="status_refresh:active")]
@@ -109,8 +196,6 @@ def format_status_message(filter_type: str = "active") -> Tuple[str, InlineKeybo
         torrents = []
 
     transfer = qbit_service.get_transfer_info()
-    global_dl_speed = transfer.get("dl_info_speed", sum(t.get("download_speed", 0) for t in torrents))
-    global_up_speed = transfer.get("up_info_speed", sum(t.get("upload_speed", 0) for t in torrents))
     total_dl_data = transfer.get("dl_info_data", sum(t.get("downloaded", 0) for t in torrents))
     total_up_data = transfer.get("up_info_data", sum(t.get("uploaded", 0) for t in torrents))
 
@@ -118,165 +203,43 @@ def format_status_message(filter_type: str = "active") -> Tuple[str, InlineKeybo
     downloading = categories["downloading"]
     uploading = categories["uploading"]
     stalled_dl = categories["stalled_dl"]
-    completed = categories["completed"]
-    paused = categories["paused"]
-    other = categories["other"]
 
-    now_str = datetime.now().strftime("%H:%M:%S")
-    disk_info = get_disk_space_info()
-
-    lines: List[str] = []
-    lines.append("📊 <b>qBittorrent Status</b>")
-    lines.append(f"🟢 <b>Server:</b> Online (<code>{version or 'qBittorrent'}</code>)")
-    lines.append(f"⚡ <b>Kecepatan:</b> ⬇️ <b>{format_speed(global_dl_speed)}</b> | ⬆️ <b>{format_speed(global_up_speed)}</b>")
-    lines.append(f"📦 <b>Transfer:</b> ⬇️ {format_bytes(total_dl_data)} | ⬆️ {format_bytes(total_up_data)}")
-    lines.append(f"💾 <b>Storage:</b> {disk_info}")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━")
-
-    # Filter specific rendering
+    # Filter selection
     if filter_type == "dl":
-        lines.append(f"📥 <b>Daftar Unduhan ({len(downloading) + len(stalled_dl)} item)</b>\n")
-        items_to_show = downloading + stalled_dl
-        if not items_to_show:
-            lines.append("<i>Tidak ada torrent yang sedang diunduh saat ini.</i>")
-        else:
-            for idx, t in enumerate(items_to_show[:10], 1):
-                name = escape_html(t.get("name", "Unknown"))
-                progress = float(t.get("progress", 0))
-                total_size = int(t.get("total_size", 0))
-                downloaded = int(t.get("downloaded", 0))
-                dl_speed = int(t.get("download_speed", 0))
-                eta_val = t.get("eta", 0)
-                seeds = max(int(t.get("num_seeds", 0) or 0), int(t.get("num_complete", 0) or 0))
-                leechs = max(int(t.get("num_leechs", 0) or 0), int(t.get("num_incomplete", 0) or 0))
-
-                lines.append(f"{idx}. <b>{name}</b>")
-                lines.append(f"   ├ {make_progress_bar(progress)}")
-                lines.append(f"   ├ Ukuran: {format_bytes(downloaded)} / {format_bytes(total_size)}")
-                lines.append(f"   ├ Speed: ⬇️ <b>{format_speed(dl_speed)}</b> • ETA: <b>{format_eta(eta_val)}</b>")
-                lines.append(f"   └ Peers: 👥 <b>{seeds}</b> seeds / <b>{leechs}</b> leechers\n")
-
-            if len(items_to_show) > 10:
-                lines.append(f"<i>...dan {len(items_to_show) - 10} unduhan lainnya.</i>")
-
+        tasks_to_render = downloading + stalled_dl
     elif filter_type == "up":
-        lines.append(f"📤 <b>Daftar Seeding / Upload ({len(uploading)} aktif)</b>\n")
-        if not uploading:
-            lines.append("<i>Tidak ada torrent yang sedang aktif mengunggah data saat ini.</i>")
-        else:
-            for idx, t in enumerate(uploading[:10], 1):
-                name = escape_html(t.get("name", "Unknown"))
-                total_size = int(t.get("total_size", 0))
-                uploaded = int(t.get("uploaded", 0))
-                up_speed = int(t.get("upload_speed", 0))
-                ratio = t.get("ratio")
-                ratio_str = f"{ratio:.2f}" if ratio is not None else "0.00"
-                seeds = max(int(t.get("num_seeds", 0) or 0), int(t.get("num_complete", 0) or 0))
-                leechs = max(int(t.get("num_leechs", 0) or 0), int(t.get("num_incomplete", 0) or 0))
-
-                lines.append(f"{idx}. <b>{name}</b>")
-                lines.append(f"   ├ Ukuran: {format_bytes(total_size)} • Rasio: <b>{ratio_str}</b>")
-                lines.append(f"   ├ Speed: ⬆️ <b>{format_speed(up_speed)}</b> • Uploaded: {format_bytes(uploaded)}")
-                lines.append(f"   └ Peers: 👥 <b>{seeds}</b> seeds / <b>{leechs}</b> leechers\n")
-
-            if len(uploading) > 10:
-                lines.append(f"<i>...dan {len(uploading) - 10} torrent lainnya.</i>")
-
+        tasks_to_render = uploading
     elif filter_type == "all":
-        lines.append(f"📋 <b>Semua Torrent ({len(torrents)} item)</b>\n")
-        if not torrents:
-            lines.append("<i>Belum ada torrent di dalam daftar.</i>")
-        else:
-            for idx, t in enumerate(torrents[:15], 1):
-                name = escape_html(t.get("name", "Unknown"))
-                progress = float(t.get("progress", 0))
-                state = str(t.get("state", ""))
-                badge_emoji, badge_label = get_torrent_badge(state, t.get("upload_speed", 0))
-                total_size = int(t.get("total_size", 0))
-                dl_speed = int(t.get("download_speed", 0))
-                up_speed = int(t.get("upload_speed", 0))
-
-                speed_str = ""
-                if dl_speed > 0:
-                    speed_str += f" ⬇️ {format_speed(dl_speed)}"
-                if up_speed > 0:
-                    speed_str += f" ⬆️ {format_speed(up_speed)}"
-
-                lines.append(f"{idx}. {badge_emoji} <b>{name}</b>")
-                lines.append(f"   └ {progress:.1f}% ({format_bytes(total_size)}) [{badge_label}]{speed_str}")
-
-            if len(torrents) > 15:
-                lines.append(f"\n<i>...dan {len(torrents) - 15} torrent lainnya.</i>")
-
+        tasks_to_render = torrents
     else:
-        # Default: Active downloads & uploads view
-        has_active = False
+        # Default "active": active downloading first, then active uploading, then stalled
+        tasks_to_render = downloading + uploading
+        if not tasks_to_render and stalled_dl:
+            tasks_to_render = stalled_dl
 
-        if downloading:
-            has_active = True
-            lines.append(f"📥 <b>Sedang Mengunduh ({len(downloading)} aktif)</b>:")
-            for idx, t in enumerate(downloading[:5], 1):
-                name = escape_html(t.get("name", "Unknown"))
-                progress = float(t.get("progress", 0))
-                total_size = int(t.get("total_size", 0))
-                downloaded = int(t.get("downloaded", 0))
-                dl_speed = int(t.get("download_speed", 0))
-                up_speed = int(t.get("upload_speed", 0))
-                eta_val = t.get("eta", 0)
-                seeds = max(int(t.get("num_seeds", 0) or 0), int(t.get("num_complete", 0) or 0))
-                leechs = max(int(t.get("num_leechs", 0) or 0), int(t.get("num_incomplete", 0) or 0))
+    cards = []
+    # Limit max 8 tasks per message to prevent Telegram 4096-character limit overflow
+    for t in tasks_to_render[:8]:
+        cards.append(render_task_card(t, version=clean_version, default_user=user_display_name))
 
-                speed_text = f"⬇️ <b>{format_speed(dl_speed)}</b>"
-                if up_speed > 0:
-                    speed_text += f" | ⬆️ {format_speed(up_speed)}"
+    sisa_disk = get_free_disk_space_compact()
+    aktif_uptime = get_host_uptime_id()
+    masuk_data = format_bytes_compact(total_dl_data)
+    keluar_data = format_bytes_compact(total_up_data)
 
-                lines.append(f"\n{idx}. <b>{name}</b>")
-                lines.append(f"   ├ Progress: <code>{make_progress_bar(progress)}</code>")
-                lines.append(f"   ├ Ukuran: <b>{format_bytes(downloaded)}</b> / {format_bytes(total_size)}")
-                lines.append(f"   ├ Kecepatan: {speed_text}")
-                lines.append(f"   ├ ETA: ⏱️ <b>{format_eta(eta_val)}</b>")
-                lines.append(f"   └ Peers: 👥 <b>{seeds}</b> seeds / <b>{leechs}</b> leechers")
+    footer = (
+        f"Sisa: {sisa_disk} | Aktif: {aktif_uptime}\n"
+        f"Masuk: {masuk_data} | Keluar: {keluar_data}"
+    )
 
-            if len(downloading) > 5:
-                lines.append(f"   <i>...dan {len(downloading) - 5} unduhan aktif lainnya.</i>")
-            lines.append("")
+    if not cards:
+        body = "Tidak ada task aktif saat ini."
+    else:
+        body = "\n \n".join(cards)
 
-        if uploading:
-            has_active = True
-            lines.append(f"📤 <b>Sedang Seeding / Mengunggah ({len(uploading)} aktif)</b>:")
-            for idx, t in enumerate(uploading[:5], 1):
-                name = escape_html(t.get("name", "Unknown"))
-                total_size = int(t.get("total_size", 0))
-                up_speed = int(t.get("upload_speed", 0))
-                ratio = t.get("ratio")
-                ratio_str = f"{ratio:.2f}" if ratio is not None else "0.00"
-                seeds = max(int(t.get("num_seeds", 0) or 0), int(t.get("num_complete", 0) or 0))
-                leechs = max(int(t.get("num_leechs", 0) or 0), int(t.get("num_incomplete", 0) or 0))
-
-                lines.append(f"\n{idx}. <b>{name}</b>")
-                lines.append(f"   ├ Ukuran: <b>{format_bytes(total_size)}</b> • Rasio: <b>{ratio_str}</b>")
-                lines.append(f"   ├ Kecepatan: ⬆️ <b>{format_speed(up_speed)}</b>")
-                lines.append(f"   └ Peers: 👥 <b>{seeds}</b> seeds / <b>{leechs}</b> leechers")
-
-            if len(uploading) > 5:
-                lines.append(f"   <i>...dan {len(uploading) - 5} torrent seeding lainnya.</i>")
-            lines.append("")
-
-        if not has_active:
-            lines.append("ℹ️ <i>Tidak ada torrent yang sedang aktif mengunduh atau mengunggah saat ini.</i>\n")
-
-        # Summary footer
-        lines.append("━━━━━━━━━━━━━━━━━━━━━")
-        lines.append("📌 <b>Ringkasan Torrent:</b>")
-        lines.append(f"• Selesai (Completed): <b>{len(completed)}</b>")
-        lines.append(f"• Dijeda (Paused): <b>{len(paused)}</b>")
-        if stalled_dl:
-            lines.append(f"• Tertunda (Stalled): <b>{len(stalled_dl)}</b>")
-        lines.append(f"• Total Terdaftar: <b>{len(torrents)} torrents</b>")
-
-    lines.append(f"\n<i>🕒 Terakhir diperbarui: {now_str}</i>")
-
-    return "\n".join(lines), build_status_keyboard(filter_type)
+    full_text = f"{body}\n \n{footer}"
+    keyboard = build_status_keyboard(filter_type)
+    return full_text, keyboard
 
 
 @Client.on_message(filters.command(["status"]))
@@ -285,17 +248,18 @@ async def status_command_handler(client: Client, message: Message):
     user_id = message.from_user.id if message.from_user else 0
     if not is_user_authorized(user_id):
         await message.reply_text(
-            "⛔ <b>Akses Ditolak</b>\nAnda tidak memiliki izin untuk menggunakan bot ini.",
+            "⛔ Akses ditolak. Anda tidak memiliki izin untuk menggunakan bot ini."
         )
         return
 
-    text, keyboard = format_status_message(filter_type="active")
+    user_name = message.from_user.first_name if message.from_user else "Kang Mirror"
+    text, keyboard = format_status_message(filter_type="active", user_display_name=user_name)
     await message.reply_text(text, reply_markup=keyboard, disable_web_page_preview=True)
 
 
 @Client.on_callback_query(filters.regex(r"^status_refresh:?(.*)"))
 async def status_refresh_callback_handler(client: Client, callback_query: CallbackQuery):
-    """Handles the refresh button click."""
+    """Handles full-width refresh button click."""
     user_id = callback_query.from_user.id if callback_query.from_user else 0
     if not is_user_authorized(user_id):
         await callback_query.answer("⛔ Akses ditolak.", show_alert=True)
@@ -305,12 +269,13 @@ async def status_refresh_callback_handler(client: Client, callback_query: Callba
     if callback_query.data and ":" in callback_query.data:
         filter_type = callback_query.data.split(":", 1)[1] or "active"
 
-    text, keyboard = format_status_message(filter_type=filter_type)
+    user_name = callback_query.from_user.first_name if callback_query.from_user else "Kang Mirror"
+    text, keyboard = format_status_message(filter_type=filter_type, user_display_name=user_name)
     try:
         await callback_query.edit_message_text(
             text, reply_markup=keyboard, disable_web_page_preview=True
         )
-        await callback_query.answer("Status berhasil diperbarui! ⚡", show_alert=False)
+        await callback_query.answer("Status diperbarui! ⚡", show_alert=False)
     except MessageNotModified:
         await callback_query.answer("Data sudah paling baru! 👍", show_alert=False)
     except Exception as e:
@@ -320,14 +285,15 @@ async def status_refresh_callback_handler(client: Client, callback_query: Callba
 
 @Client.on_callback_query(filters.regex(r"^status_filter:(.*)"))
 async def status_filter_callback_handler(client: Client, callback_query: CallbackQuery):
-    """Handles filter toggle buttons."""
+    """Handles full-width filter button toggle."""
     user_id = callback_query.from_user.id if callback_query.from_user else 0
     if not is_user_authorized(user_id):
         await callback_query.answer("⛔ Akses ditolak.", show_alert=True)
         return
 
     filter_type = callback_query.data.split(":", 1)[1] if callback_query.data else "active"
-    text, keyboard = format_status_message(filter_type=filter_type)
+    user_name = callback_query.from_user.first_name if callback_query.from_user else "Kang Mirror"
+    text, keyboard = format_status_message(filter_type=filter_type, user_display_name=user_name)
     try:
         await callback_query.edit_message_text(
             text, reply_markup=keyboard, disable_web_page_preview=True

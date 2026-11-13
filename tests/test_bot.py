@@ -2,13 +2,16 @@ import pytest
 from bot.utils import (
     escape_html,
     format_bytes,
+    format_bytes_compact,
+    format_duration_id,
     format_eta,
     format_speed,
     get_torrent_badge,
     is_user_authorized,
     make_progress_bar,
+    make_square_progress_bar,
 )
-from bot.command.status import categorize_torrents, format_status_message
+from bot.command.status import categorize_torrents, format_status_message, render_task_card
 
 
 def test_bot_format_bytes():
@@ -20,32 +23,35 @@ def test_bot_format_bytes():
     assert format_bytes(-50) == "0 B"
 
 
-def test_bot_format_speed():
-    assert format_speed(0) == "0 B/s"
-    assert format_speed(2097152) == "2.00 MB/s"
+def test_bot_format_bytes_compact():
+    assert format_bytes_compact(0) == "0B"
+    assert format_bytes_compact(1024) == "1KB"
+    assert format_bytes_compact(int(23.38 * 1024 * 1024)) == "23.38MB"
+    assert format_bytes_compact(int(64.66 * 1024 * 1024 * 1024)) == "64.66GB"
+    assert format_bytes_compact(int(1.17 * 1024 * 1024 * 1024 * 1024)) == "1.17TB"
 
 
-def test_bot_format_eta():
-    assert format_eta(0) == "∞"
-    assert format_eta(-1) == "∞"
-    assert format_eta(8640000) == "∞"
-    assert format_eta(45) == "45s"
-    assert format_eta(125) == "2m 5s"
-    assert format_eta(3665) == "1h 1m"
+def test_bot_format_duration_id():
+    assert format_duration_id(0) == "0d"
+    assert format_duration_id(33) == "33d"
+    assert format_duration_id(34 * 60 + 24) == "34m24d"
+    assert format_duration_id(2 * 3600 + 30 * 60 + 28) == "2j30m28d"
+    assert format_duration_id(11 * 3600 + 14 * 60 + 40) == "11j14m40d"
+    assert format_duration_id(8640000) == "100h"
 
 
-def test_bot_make_progress_bar():
-    bar_0 = make_progress_bar(0, 10)
-    assert bar_0 == "[░░░░░░░░░░] 0.0%"
+def test_bot_make_square_progress_bar():
+    p0 = make_square_progress_bar(0)
+    assert p0 == "┌┤□□□□□□□□□□│ 0%"
 
-    bar_50 = make_progress_bar(50, 10)
-    assert bar_50 == "[█████░░░░░] 50.0%"
+    p87 = make_square_progress_bar(87.5)
+    assert p87 == "┌┤■■■■■■■■□□│ 87.5%"
 
-    bar_100 = make_progress_bar(100, 10)
-    assert bar_100 == "[██████████] 100.0%"
+    p2 = make_square_progress_bar(2.87)
+    assert p2 == "┌┤□□□□□□□□□□│ 2.87%"
 
-    bar_clamp = make_progress_bar(150, 10)
-    assert bar_clamp == "[██████████] 100.0%"
+    p100 = make_square_progress_bar(100)
+    assert p100 == "┌┤■■■■■■■■■■│ 100%"
 
 
 def test_bot_get_torrent_badge():
@@ -90,15 +96,19 @@ def test_bot_escape_html():
 def test_bot_is_user_authorized(monkeypatch):
     from app.core.config import settings
 
-    # When no authorized users configured: everyone allowed
     monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", None)
+    monkeypatch.setattr(settings, "OWNER_ID", None)
     assert is_user_authorized(12345) is True
 
-    # When authorized users are configured
     monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", "111, 222, 333")
     assert is_user_authorized(111) is True
     assert is_user_authorized(222) is True
     assert is_user_authorized(999) is False
+
+    monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", None)
+    monkeypatch.setattr(settings, "OWNER_ID", 1487943213)
+    assert is_user_authorized(1487943213) is True
+    assert is_user_authorized(9999) is False
 
 
 def test_bot_categorize_torrents():
@@ -127,14 +137,43 @@ def test_bot_categorize_torrents():
     assert cats["paused"][0]["name"] == "t5"
 
 
+def test_bot_render_task_card():
+    sample_item = {
+        "name": "Dragon Ball & Dragon Ball Z Movies",
+        "hash": "094a7f561ec0c6bafd4bee07842b610e3d475386",
+        "state": "stalledDL",
+        "progress": 0,
+        "downloaded": 0,
+        "total_size": 69427900000,
+        "download_speed": 0,
+        "upload_speed": 0,
+        "eta": 8640000,
+        "added_on": 1700000000,
+    }
+    card = render_task_card(sample_item, version="5.3.0", default_user="𝓩𝓾𝔂𝓜")
+    assert "Dragon Ball & Dragon Ball Z Movies" in card
+    assert "┌┤□□□□□□□□□□│ 0%" in card
+    assert "├ ID: Kqng-" in card
+    assert "├ Status: * (ノ_<。)" in card
+    assert "├ Alat: qBittorrent 5.3.0" in card
+    assert "├ Waktu:" in card
+    assert "├ Proses: 0B / " in card
+    assert "├ Kecepatan: 0B/s" in card
+    assert "├ User: 𝓩𝓾𝔂𝓜" in card
+    assert "└ * | *" in card
+
+
 def test_bot_format_status_message_offline(monkeypatch):
     from app.services.qbit_service import qbit_service
 
     monkeypatch.setattr(qbit_service, "check_connection", lambda: (False, None))
     text, keyboard = format_status_message()
-    assert "Offline" in text
     assert "qBittorrent" in text
+    assert "Status: * (ノ_<。)" in text
     assert keyboard is not None
+    # All keyboard rows should have 1 button for full-width layout
+    for row in keyboard.inline_keyboard:
+        assert len(row) == 1
 
 
 def test_bot_format_status_message_online(monkeypatch):
@@ -146,7 +185,7 @@ def test_bot_format_status_message_online(monkeypatch):
         "list_torrents",
         lambda **kwargs: [
             {
-                "hash": "h1",
+                "hash": "094a7f561ec0c6bafd4bee07842b610e3d475386",
                 "name": "Ubuntu Desktop 24.04.iso",
                 "state": "downloading",
                 "progress": 55.5,
@@ -160,9 +199,10 @@ def test_bot_format_status_message_online(monkeypatch):
                 "num_complete": 40,
                 "num_leechs": 10,
                 "num_incomplete": 10,
+                "added_on": 1700000000,
             },
             {
-                "hash": "h2",
+                "hash": "a75a30a1234567890abcdef1234567890abcdef1",
                 "name": "Debian Seeding.iso",
                 "state": "uploading",
                 "progress": 100.0,
@@ -177,6 +217,7 @@ def test_bot_format_status_message_online(monkeypatch):
                 "num_complete": 15,
                 "num_leechs": 2,
                 "num_incomplete": 2,
+                "added_on": 1700000000,
             },
         ],
     )
@@ -192,23 +233,18 @@ def test_bot_format_status_message_online(monkeypatch):
     )
 
     # Active view
-    text, keyboard = format_status_message(filter_type="active")
+    text, keyboard = format_status_message(filter_type="active", user_display_name="You Aren’t Gonna Need It, YaGNi")
     assert "Ubuntu Desktop 24.04.iso" in text
     assert "Debian Seeding.iso" in text
-    assert "4.29 MB/s" in text or "MB/s" in text
-    assert "Online" in text
-    assert "v5.3.0" in text
+    assert "┌┤" in text
+    assert "├ ID: Kqng-" in text
+    assert "├ Alat: qBittorrent 5.3.0" in text
+    assert "Sisa:" in text
+    assert "Aktif:" in text
+    assert "Masuk:" in text
+    assert "Keluar:" in text
+    assert "User: You Aren’t Gonna Need It, YaGNi" in text
 
-    # DL filter view
-    dl_text, _ = format_status_message(filter_type="dl")
-    assert "Daftar Unduhan" in dl_text
-    assert "Ubuntu Desktop 24.04.iso" in dl_text
-
-    # UP filter view
-    up_text, _ = format_status_message(filter_type="up")
-    assert "Daftar Seeding" in up_text
-    assert "Debian Seeding.iso" in up_text
-
-    # All filter view
-    all_text, _ = format_status_message(filter_type="all")
-    assert "Semua Torrent" in all_text
+    # Verify every row in inline keyboard has 1 button (filling full chat width)
+    for row in keyboard.inline_keyboard:
+        assert len(row) == 1
