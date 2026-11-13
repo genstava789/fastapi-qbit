@@ -30,8 +30,7 @@ async def start_help_command_handler(client: Client, message: Message):
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Cek Status Torrent", callback_data="status_filter:active")],
-        [InlineKeyboardButton("📋 Lihat Semua Torrent", callback_data="status_filter:all")],
+        [InlineKeyboardButton("📊 Cek Status Torrent", callback_data="status_page:1")],
     ])
 
     await message.reply_text(text, reply_markup=keyboard, disable_web_page_preview=True)

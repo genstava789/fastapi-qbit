@@ -233,7 +233,7 @@ def test_bot_format_status_message_online(monkeypatch):
     )
 
     # Active view
-    text, keyboard = format_status_message(filter_type="active", user_display_name="You Aren’t Gonna Need It, YaGNi")
+    text, keyboard = format_status_message(page=1, user_display_name="You Aren’t Gonna Need It, YaGNi")
     assert "Ubuntu Desktop 24.04.iso" in text
     assert "Debian Seeding.iso" in text
     assert "┌┤" in text
@@ -245,6 +245,58 @@ def test_bot_format_status_message_online(monkeypatch):
     assert "Keluar:" in text
     assert "User: You Aren’t Gonna Need It, YaGNi" in text
 
-    # Verify every row in inline keyboard has 1 button (filling full chat width)
+    # Verify every row in inline keyboard has 1 button (filling full chat width) for single page
     for row in keyboard.inline_keyboard:
         assert len(row) == 1
+
+
+def test_bot_format_status_message_pagination(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    monkeypatch.setattr(qbit_service, "check_connection", lambda: (True, "v5.3.0"))
+    # Create 12 sample torrents
+    sample_12 = [
+        {
+            "hash": f"hash{i:04d}abcdef1234567890abcdef1234567890",
+            "name": f"Torrent Task #{i+1}",
+            "state": "downloading" if i < 3 else ("uploading" if i < 7 else "pausedUP"),
+            "progress": (i + 1) * 8.0,
+            "total_size": 1000000000,
+            "downloaded": 500000000,
+            "uploaded": 100000000,
+            "download_speed": 1000000 if i < 3 else 0,
+            "upload_speed": 500000 if 3 <= i < 7 else 0,
+            "eta": 100,
+            "added_on": 1700000000 + i,
+        }
+        for i in range(12)
+    ]
+    monkeypatch.setattr(qbit_service, "list_torrents", lambda **kwargs: sample_12)
+    monkeypatch.setattr(qbit_service, "get_transfer_info", lambda: {})
+
+    # Page 1 (items 1..5)
+    text1, kb1 = format_status_message(page=1, page_size=5)
+    assert "Torrent Task #" in text1
+    # Check that exactly 5 task cards are present on page 1
+    assert text1.count("├ ID: Kqng-") == 5
+    # Verify next button is present
+    flattened_cb1 = [btn.callback_data for row in kb1.inline_keyboard for btn in row]
+    assert "status_page:2" in flattened_cb1
+    assert "status_page:0" not in flattened_cb1
+    # Verify NO filter buttons exist
+    assert not any("status_filter:" in cb for cb in flattened_cb1)
+
+    # Page 2 (items 6..10)
+    text2, kb2 = format_status_message(page=2, page_size=5)
+    assert text2.count("├ ID: Kqng-") == 5
+    flattened_cb2 = [btn.callback_data for row in kb2.inline_keyboard for btn in row]
+    assert "status_page:1" in flattened_cb2
+    assert "status_page:3" in flattened_cb2
+
+    # Page 3 (items 11..12)
+    text3, kb3 = format_status_message(page=3, page_size=5)
+    assert text3.count("├ ID: Kqng-") == 2
+    flattened_cb3 = [btn.callback_data for row in kb3.inline_keyboard for btn in row]
+    assert "status_page:2" in flattened_cb3
+    assert "status_page:4" not in flattened_cb3
+
