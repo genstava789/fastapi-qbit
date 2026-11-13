@@ -24,9 +24,26 @@ logger = logging.getLogger("qbit_bot")
 
 def create_bot() -> Client:
     """Validates configuration and creates the Pyrogram Client."""
-    token = settings.TELEGRAM_BOT_TOKEN or os.getenv("TELEGRAM_BOT_TOKEN")
-    api_id = settings.TELEGRAM_API_ID or os.getenv("TELEGRAM_API_ID")
-    api_hash = settings.TELEGRAM_API_HASH or os.getenv("TELEGRAM_API_HASH")
+    token = (
+        settings.TELEGRAM_BOT_TOKEN
+        or settings.BOT_TOKEN
+        or os.getenv("TELEGRAM_BOT_TOKEN")
+        or os.getenv("BOT_TOKEN")
+    )
+    api_id = (
+        settings.TELEGRAM_API_ID
+        or settings.TELEGRAM_API
+        or os.getenv("TELEGRAM_API_ID")
+        or os.getenv("TELEGRAM_API")
+        or os.getenv("API_ID")
+    )
+    api_hash = (
+        settings.TELEGRAM_API_HASH
+        or settings.TELEGRAM_HASH
+        or os.getenv("TELEGRAM_API_HASH")
+        or os.getenv("TELEGRAM_HASH")
+        or os.getenv("API_HASH")
+    )
 
     if not token:
         logger.error("TELEGRAM_BOT_TOKEN is missing in environment or .env file.")

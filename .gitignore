@@ -35,6 +35,10 @@ env/
 .env
 .env.local
 
+# Telegram Sessions
+*.session
+*.session-journal
+
 # Logs
 *.log
 logs/

@@ -79,11 +79,16 @@ def escape_html(text: str) -> str:
 
 def get_authorized_user_ids() -> Set[int]:
     """Parses authorized Telegram user IDs from settings."""
-    raw = settings.TELEGRAM_AUTHORIZED_USERS
+    raw = (
+        settings.TELEGRAM_AUTHORIZED_USERS
+        or os.getenv("TELEGRAM_AUTHORIZED_USERS")
+        or str(getattr(settings, "OWNER_ID", "") or "")
+        or os.getenv("OWNER_ID", "")
+    )
     if not raw:
         return set()
     result = set()
-    for item in raw.split(","):
+    for item in str(raw).split(","):
         cleaned = item.strip()
         if cleaned.isdigit():
             result.add(int(cleaned))

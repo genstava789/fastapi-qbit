@@ -35,10 +35,14 @@ class Settings(BaseSettings):
 
     # Telegram Bot Settings (Pyrogram)
     TELEGRAM_BOT_TOKEN: str | None = None
+    BOT_TOKEN: str | None = None
     TELEGRAM_API_ID: int | None = None
+    TELEGRAM_API: int | None = None
     TELEGRAM_API_HASH: str | None = None
+    TELEGRAM_HASH: str | None = None
     TELEGRAM_BOT_NAME: str = "qbit_bot"
     TELEGRAM_AUTHORIZED_USERS: str | None = None
+    OWNER_ID: int | str | None = None
 
     @property
     def qbit_base_url(self) -> str:
