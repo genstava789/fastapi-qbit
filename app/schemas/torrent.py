@@ -60,6 +60,7 @@ class TorrentItemResponse(BaseModel):
     num_complete: Optional[int] = 0
     num_leechs: Optional[int] = 0
     num_incomplete: Optional[int] = 0
+    added_on: Optional[int] = 0
 
 
 class TorrentActionResponse(BaseModel):

@@ -144,22 +144,22 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
               <div className="mt-1 flex items-center gap-3 text-xs font-mono font-semibold">
                 <span
                   className="text-success"
-                  title={`Connected seeds: ${torrent.num_seeds ?? 0}${torrent.num_complete ? ` (swarm: ${torrent.num_complete})` : ""}`}
+                  title={`Connected seeds: ${torrent.num_seeds ?? 0}${torrent.num_complete && torrent.num_complete > 0 ? ` (swarm: ${torrent.num_complete})` : ""}`}
                 >
                   {torrent.num_seeds ?? 0}
-                  {torrent.num_complete ? (
-                    <span className="text-text-muted text-[11px]">/{torrent.num_complete}</span>
+                  {torrent.num_complete && torrent.num_complete > 0 ? (
+                    <span className="text-text-muted text-[11px]"> ({torrent.num_complete})</span>
                   ) : null}
                   <span className="text-text-muted text-[11px] ml-1 font-normal">seeds</span>
                 </span>
                 <span className="text-text-muted">·</span>
                 <span
                   className="text-danger"
-                  title={`Connected leechers: ${torrent.num_leechs ?? 0}${torrent.num_incomplete ? ` (swarm: ${torrent.num_incomplete})` : ""}`}
+                  title={`Connected leechers: ${torrent.num_leechs ?? 0}${torrent.num_incomplete && torrent.num_incomplete > 0 ? ` (swarm: ${torrent.num_incomplete})` : ""}`}
                 >
                   {torrent.num_leechs ?? 0}
-                  {torrent.num_incomplete ? (
-                    <span className="text-text-muted text-[11px]">/{torrent.num_incomplete}</span>
+                  {torrent.num_incomplete && torrent.num_incomplete > 0 ? (
+                    <span className="text-text-muted text-[11px]"> ({torrent.num_incomplete})</span>
                   ) : null}
                   <span className="text-text-muted text-[11px] ml-1 font-normal">leechers</span>
                 </span>

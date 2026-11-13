@@ -25,6 +25,7 @@ export interface TorrentItem {
   num_complete?: number;
   num_leechs?: number;
   num_incomplete?: number;
+  added_on?: number;
 }
 
 export interface HealthStatus {

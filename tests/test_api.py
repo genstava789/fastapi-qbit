@@ -43,6 +43,67 @@ async def test_list_torrents(monkeypatch):
         assert isinstance(data, list)
 
 
+def test_qbit_service_extract_peers_and_seeds(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    class MockTorrent:
+        def __init__(self, data):
+            for k, v in data.items():
+                setattr(self, k, v)
+
+    raw_data = {
+        "hash": "abc123hash",
+        "name": "Ubuntu Linux",
+        "state": "downloading",
+        "progress": 0.45,
+        "total_size": 1000000,
+        "downloaded": 450000,
+        "uploaded": 5000,
+        "dlspeed": 1024000,
+        "upspeed": 51200,
+        "eta": 120,
+        "save_path": "/downloads",
+        "content_path": "/downloads/Ubuntu Linux",
+        "ratio": 0.11,
+        "num_seeds": 8,
+        "num_complete": 45,
+        "num_leechs": 3,
+        "num_incomplete": 12,
+        "added_on": 1700000000,
+    }
+
+    mock_client = type("MockClient", (), {
+        "torrents_info": lambda self, **kwargs: [MockTorrent(raw_data)],
+    })()
+    monkeypatch.setattr(qbit_service, "get_client", lambda: mock_client)
+
+    torrents = qbit_service.list_torrents()
+    assert len(torrents) == 1
+    t = torrents[0]
+    assert t["num_seeds"] == 8
+    assert t["num_complete"] == 45
+    assert t["num_leechs"] == 3
+    assert t["num_incomplete"] == 12
+    assert t["added_on"] == 1700000000
+    assert t["download_speed"] == 1024000
+    assert t["upload_speed"] == 51200
+
+    # Also test when raw items are dictionaries
+    mock_dict_client = type("MockClient", (), {
+        "torrents_info": lambda self, **kwargs: [dict(raw_data)],
+    })()
+    monkeypatch.setattr(qbit_service, "get_client", lambda: mock_dict_client)
+
+    dict_torrents = qbit_service.list_torrents()
+    assert len(dict_torrents) == 1
+    dt = dict_torrents[0]
+    assert dt["num_seeds"] == 8
+    assert dt["num_complete"] == 45
+    assert dt["num_leechs"] == 3
+    assert dt["num_incomplete"] == 12
+    assert dt["added_on"] == 1700000000
+
+
 @pytest.mark.anyio
 async def test_add_magnet_validation_error():
     transport = ASGITransport(app=app)

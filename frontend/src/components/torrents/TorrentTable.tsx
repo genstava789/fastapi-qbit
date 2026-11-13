@@ -40,14 +40,21 @@ import toast from "react-hot-toast";
 
 const PAGE_SIZE = 10;
 
-interface TorrentTableProps {
+export type TorrentSortKey =
+  | keyof TorrentItem
+  | "ratio";
+
+export interface TorrentTableProps {
   torrents: TorrentItem[];
   filterKey?: string;
   isSelectMode?: boolean;
   onEnterSelectMode?: () => void;
+  sortKey?: TorrentSortKey;
+  sortDir?: SortDirection;
+  onSortChange?: (key: TorrentSortKey, dir: SortDirection) => void;
 }
 
-type SortKey = keyof TorrentItem;
+type SortKey = TorrentSortKey;
 
 function SortIcon({
   col,
@@ -193,6 +200,29 @@ function MobileTorrentCard({
               {torrent.progress.toFixed(1)}%
             </span>
 
+            {/* Conditional Transfer Speed per Torrent When Active */}
+            {(torrent.download_speed > 0 || torrent.upload_speed > 0) && (
+              <span className="text-text-muted text-xs">•</span>
+            )}
+            {torrent.download_speed > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 text-xs font-mono font-semibold text-accent"
+                title={`Download: ${formatSpeed(torrent.download_speed)}`}
+              >
+                <Download className="w-3 h-3 stroke-[2.5]" />
+                <span>{formatSpeed(torrent.download_speed)}</span>
+              </span>
+            )}
+            {torrent.upload_speed > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 text-xs font-mono font-semibold text-success"
+                title={`Upload: ${formatSpeed(torrent.upload_speed)}`}
+              >
+                <Upload className="w-3 h-3 stroke-[2.5]" />
+                <span>{formatSpeed(torrent.upload_speed)}</span>
+              </span>
+            )}
+
             {/* Active Google Drive upload badge */}
             {activeDriveUpload && (
               <Badge
@@ -226,7 +256,7 @@ function MobileTorrentCard({
         </div>
 
         {/* Quick Top Actions: Play/Pause and More */}
-        <div className="flex items-center gap-1 -mr-2 -mt-1 flex-shrink-0">
+        <div className="flex items-center gap-2 -mr-1 -mt-1 flex-shrink-0">
           {isPaused ? (
             <button
               type="button"
@@ -262,7 +292,7 @@ function MobileTorrentCard({
               onOpenMenu();
             }}
             aria-label={`More actions for ${torrent.name}`}
-            className="w-10 h-10 flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary active:bg-glass-hover"
+            className="w-10 h-10 p-2 flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary active:bg-glass-hover active:scale-95 transition-all"
           >
             <MoreVertical className="w-5 h-5" />
           </button>
@@ -302,16 +332,28 @@ function MobileTorrentCard({
           <p className="text-sm font-mono font-semibold text-text-primary mt-0.5 whitespace-nowrap">
             <span
               className="text-success font-semibold"
-              title={`Seeds: ${torrent.num_seeds ?? 0}${torrent.num_complete ? `/${torrent.num_complete}` : ""}`}
+              title={`Seeds: ${torrent.num_seeds ?? 0} connected${torrent.num_complete && torrent.num_complete > 0 ? ` (${torrent.num_complete} in swarm)` : ""}`}
             >
               {torrent.num_seeds ?? 0}
+              {torrent.num_complete && torrent.num_complete > 0 ? (
+                <span className="text-text-muted text-[11px] font-normal">
+                  ({torrent.num_complete})
+                </span>
+              ) : null}
+              <span className="text-[10px] text-text-muted font-normal ml-0.5">S</span>
             </span>
-            <span className="text-text-muted font-normal mx-0.5">/</span>
+            <span className="text-text-muted font-normal mx-1">·</span>
             <span
               className="text-danger font-semibold"
-              title={`Leechers: ${torrent.num_leechs ?? 0}${torrent.num_incomplete ? `/${torrent.num_incomplete}` : ""}`}
+              title={`Leechers: ${torrent.num_leechs ?? 0} connected${torrent.num_incomplete && torrent.num_incomplete > 0 ? ` (${torrent.num_incomplete} in swarm)` : ""}`}
             >
               {torrent.num_leechs ?? 0}
+              {torrent.num_incomplete && torrent.num_incomplete > 0 ? (
+                <span className="text-text-muted text-[11px] font-normal">
+                  ({torrent.num_incomplete})
+                </span>
+              ) : null}
+              <span className="text-[10px] text-text-muted font-normal ml-0.5">L</span>
             </span>
           </p>
         </div>
@@ -335,6 +377,9 @@ export function TorrentTable({
   filterKey = "all",
   isSelectMode = false,
   onEnterSelectMode,
+  sortKey: controlledSortKey,
+  sortDir: controlledSortDir,
+  onSortChange,
 }: TorrentTableProps) {
   const searchQuery = useAppStore((s) => s.searchQuery);
   const selectedTorrents = useAppStore((s) => s.selectedTorrents);
@@ -369,8 +414,12 @@ export function TorrentTable({
     }
   }, [torrents, saveTorrentRatio, getRatio]);
 
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<SortDirection>("asc");
+  const [internalSortKey, setInternalSortKey] = useState<SortKey>("added_on");
+  const [internalSortDir, setInternalSortDir] = useState<SortDirection>("desc");
+
+  const sortKey = controlledSortKey ?? internalSortKey;
+  const sortDir = controlledSortDir ?? internalSortDir;
+
   const [page, setPage] = useState(1);
   const currentFilterSig = `${filterKey}::${searchQuery}`;
   const [prevFilterSig, setPrevFilterSig] = useState(currentFilterSig);
@@ -460,46 +509,61 @@ export function TorrentTable({
       );
     }
     list.sort((a, b) => {
-      // 1. Download Priority: Torrents currently being downloaded are prioritized at the very top
-      const tierA = getTorrentDownloadPriorityTier(a);
-      const tierB = getTorrentDownloadPriorityTier(b);
-      if (tierA !== tierB) {
-        return tierA - tierB;
-      }
+      // 1. Download Priority: Torrents currently being downloaded are prioritized at the very top ONLY for default name sort
+      if (sortKey === "name" && sortDir === "asc") {
+        const tierA = getTorrentDownloadPriorityTier(a);
+        const tierB = getTorrentDownloadPriorityTier(b);
+        if (tierA !== tierB) {
+          return tierA - tierB;
+        }
 
-      // Within active downloads (Tier 0), default to sorting by download speed descending
-      if (tierA === 0 && sortKey === "name" && sortDir === "asc") {
-        if (b.download_speed !== a.download_speed) {
+        // Within active downloads (Tier 0), default to sorting by download speed descending
+        if (tierA === 0 && b.download_speed !== a.download_speed) {
           return b.download_speed - a.download_speed;
         }
       }
 
       // 2. User-chosen sort column and direction
+      if (sortKey === "added_on") {
+        const aVal = a.added_on ?? 0;
+        const bVal = b.added_on ?? 0;
+        return sortDir === "asc" ? aVal - bVal : bVal - aVal;
+      }
+      if (sortKey === "download_speed") {
+        return sortDir === "asc"
+          ? a.download_speed - b.download_speed
+          : b.download_speed - a.download_speed;
+      }
+      if (sortKey === "upload_speed") {
+        return sortDir === "asc"
+          ? a.upload_speed - b.upload_speed
+          : b.upload_speed - a.upload_speed;
+      }
       if (sortKey === "ratio") {
         const aRatio = parseFloat(getRatio(a)) || 0;
         const bRatio = parseFloat(getRatio(b)) || 0;
         return sortDir === "asc" ? aRatio - bRatio : bRatio - aRatio;
       }
       if (sortKey === "num_seeds") {
-        const aSeeds = a.num_seeds ?? 0;
-        const bSeeds = b.num_seeds ?? 0;
+        const aSeeds = (a.num_seeds ?? 0) > 0 ? (a.num_seeds ?? 0) : (a.num_complete ?? 0);
+        const bSeeds = (b.num_seeds ?? 0) > 0 ? (b.num_seeds ?? 0) : (b.num_complete ?? 0);
         return sortDir === "asc" ? aSeeds - bSeeds : bSeeds - aSeeds;
       }
       if (sortKey === "num_leechs") {
-        const aLeechs = a.num_leechs ?? 0;
-        const bLeechs = b.num_leechs ?? 0;
+        const aLeechs = (a.num_leechs ?? 0) > 0 ? (a.num_leechs ?? 0) : (a.num_incomplete ?? 0);
+        const bLeechs = (b.num_leechs ?? 0) > 0 ? (b.num_leechs ?? 0) : (b.num_incomplete ?? 0);
         return sortDir === "asc" ? aLeechs - bLeechs : bLeechs - aLeechs;
       }
-      const aVal = a[sortKey];
-      const bVal = b[sortKey];
+      const aVal = a[sortKey as keyof TorrentItem];
+      const bVal = b[sortKey as keyof TorrentItem];
       if (typeof aVal === "string" && typeof bVal === "string") {
         return sortDir === "asc"
           ? aVal.localeCompare(bVal)
           : bVal.localeCompare(aVal);
       }
       return sortDir === "asc"
-        ? (aVal as number) - (bVal as number)
-        : (bVal as number) - (aVal as number);
+        ? ((aVal as number) ?? 0) - ((bVal as number) ?? 0)
+        : ((bVal as number) ?? 0) - ((aVal as number) ?? 0);
     });
     return list;
   }, [torrents, searchQuery, sortKey, sortDir, getRatio]);
@@ -514,11 +578,20 @@ export function TorrentTable({
 
   const toggleSort = (key: SortKey) => {
     setPage(1);
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    const nextDir =
+      sortKey === key
+        ? sortDir === "asc"
+          ? "desc"
+          : "asc"
+        : key === "name"
+          ? "asc"
+          : "desc";
+
+    if (onSortChange) {
+      onSortChange(key, nextDir);
     } else {
-      setSortKey(key);
-      setSortDir("asc");
+      setInternalSortKey(key);
+      setInternalSortDir(nextDir);
     }
   };
 
@@ -648,14 +721,30 @@ export function TorrentTable({
                     />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-right w-28">
+                <th
+                  className="px-4 py-3 text-right w-28 cursor-pointer hover:text-text-primary transition-colors"
+                  onClick={() => toggleSort("download_speed")}
+                >
                   <div className="flex items-center justify-end gap-1">
-                    <Download className="w-3 h-3" /> Speed
+                    <Download className="w-3 h-3" /> Speed{" "}
+                    <SortIcon
+                      col="download_speed"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                    />
                   </div>
                 </th>
-                <th className="px-4 py-3 text-right w-28">
+                <th
+                  className="px-4 py-3 text-right w-28 cursor-pointer hover:text-text-primary transition-colors"
+                  onClick={() => toggleSort("upload_speed")}
+                >
                   <div className="flex items-center justify-end gap-1">
-                    <Upload className="w-3 h-3" /> Speed
+                    <Upload className="w-3 h-3" /> Speed{" "}
+                    <SortIcon
+                      col="upload_speed"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                    />
                   </div>
                 </th>
                 <th className="px-4 py-3 text-right w-20">ETA</th>
@@ -764,24 +853,24 @@ export function TorrentTable({
                     <td className="px-4 py-3 text-right font-mono text-xs whitespace-nowrap">
                       <span
                         className="text-success font-semibold"
-                        title={`Seeds: ${t.num_seeds ?? 0}${t.num_complete ? ` connected of ${t.num_complete} in swarm` : ""}`}
+                        title={`Seeds: ${t.num_seeds ?? 0} connected${t.num_complete && t.num_complete > 0 ? ` (${t.num_complete} in swarm)` : ""}`}
                       >
                         {t.num_seeds ?? 0}
-                        {t.num_complete ? (
-                          <span className="text-text-muted text-[11px]">/{t.num_complete}</span>
+                        {t.num_complete && t.num_complete > 0 ? (
+                          <span className="text-text-muted text-[11px]"> ({t.num_complete})</span>
                         ) : null}
-                        <span className="text-[10px] text-text-muted ml-0.5">S</span>
+                        <span className="text-[10px] text-text-muted ml-0.5 font-normal">S</span>
                       </span>
-                      <span className="text-text-muted mx-1.5">·</span>
+                      <span className="text-text-muted mx-1.5 font-normal">·</span>
                       <span
                         className="text-danger font-semibold"
-                        title={`Leechers: ${t.num_leechs ?? 0}${t.num_incomplete ? ` connected of ${t.num_incomplete} in swarm` : ""}`}
+                        title={`Leechers: ${t.num_leechs ?? 0} connected${t.num_incomplete && t.num_incomplete > 0 ? ` (${t.num_incomplete} in swarm)` : ""}`}
                       >
                         {t.num_leechs ?? 0}
-                        {t.num_incomplete ? (
-                          <span className="text-text-muted text-[11px]">/{t.num_incomplete}</span>
+                        {t.num_incomplete && t.num_incomplete > 0 ? (
+                          <span className="text-text-muted text-[11px]"> ({t.num_incomplete})</span>
                         ) : null}
-                        <span className="text-[10px] text-text-muted ml-0.5">L</span>
+                        <span className="text-[10px] text-text-muted ml-0.5 font-normal">L</span>
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">

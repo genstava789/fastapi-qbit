@@ -6,6 +6,26 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _extract_int_field(t: Any, *field_names: str, default: int = 0) -> int:
+    """Safely extracts an integer field from an object or dictionary, ignoring negative values."""
+    for name in field_names:
+        val = None
+        if isinstance(t, dict) and name in t:
+            val = t[name]
+        elif hasattr(t, name):
+            val = getattr(t, name, None)
+        elif hasattr(t, "get") and callable(t.get):
+            val = t.get(name)
+
+        if val is not None:
+            try:
+                ival = int(val)
+                return ival if ival >= 0 else 0
+            except (ValueError, TypeError):
+                pass
+    return default
+
+
 def is_add_torrent_success(result: Any) -> bool:
     """Evaluates whether qBittorrent torrents_add response indicates success.
 
@@ -152,31 +172,34 @@ class QBitService:
 
         items = []
         for t in torrents:
-            raw_ratio = getattr(t, "ratio", None)
+            raw_ratio = t.get("ratio") if isinstance(t, dict) else getattr(t, "ratio", None)
             parsed_ratio = None
             if raw_ratio is not None and isinstance(raw_ratio, (int, float)):
                 if raw_ratio >= 0 and raw_ratio < 999:
                     parsed_ratio = round(float(raw_ratio), 2)
 
+            t_content_path = t.get("content_path") if isinstance(t, dict) else getattr(t, "content_path", None)
+
             items.append(
                 {
-                    "hash": t.hash,
-                    "name": t.name,
-                    "state": t.state,
-                    "progress": round(t.progress * 100, 2),
-                    "total_size": t.total_size,
-                    "downloaded": t.downloaded,
-                    "uploaded": t.uploaded,
-                    "download_speed": t.dlspeed,
-                    "upload_speed": t.upspeed,
-                    "eta": t.eta,
-                    "save_path": t.save_path,
-                    "content_path": getattr(t, "content_path", None),
+                    "hash": t.hash if hasattr(t, "hash") else t["hash"],
+                    "name": t.name if hasattr(t, "name") else t["name"],
+                    "state": t.state if hasattr(t, "state") else t["state"],
+                    "progress": round((t.progress if hasattr(t, "progress") else t["progress"]) * 100, 2),
+                    "total_size": t.total_size if hasattr(t, "total_size") else t["total_size"],
+                    "downloaded": t.downloaded if hasattr(t, "downloaded") else t["downloaded"],
+                    "uploaded": t.uploaded if hasattr(t, "uploaded") else t["uploaded"],
+                    "download_speed": t.dlspeed if hasattr(t, "dlspeed") else t.get("dlspeed", 0),
+                    "upload_speed": t.upspeed if hasattr(t, "upspeed") else t.get("upspeed", 0),
+                    "eta": t.eta if hasattr(t, "eta") else t.get("eta", 0),
+                    "save_path": t.save_path if hasattr(t, "save_path") else t.get("save_path", ""),
+                    "content_path": t_content_path,
                     "ratio": parsed_ratio,
-                    "num_seeds": int(getattr(t, "num_seeds", 0) or 0),
-                    "num_complete": int(getattr(t, "num_complete", 0) or 0),
-                    "num_leechs": int(getattr(t, "num_leechs", 0) or 0),
-                    "num_incomplete": int(getattr(t, "num_incomplete", 0) or 0),
+                    "num_seeds": _extract_int_field(t, "num_seeds", "seeds"),
+                    "num_complete": _extract_int_field(t, "num_complete"),
+                    "num_leechs": _extract_int_field(t, "num_leechs", "num_leeches", "leechs", "peers"),
+                    "num_incomplete": _extract_int_field(t, "num_incomplete"),
+                    "added_on": _extract_int_field(t, "added_on"),
                 }
             )
         return items
@@ -188,30 +211,33 @@ class QBitService:
         if not results:
             return None
         t = results[0]
-        raw_ratio = getattr(t, "ratio", None)
+        raw_ratio = t.get("ratio") if isinstance(t, dict) else getattr(t, "ratio", None)
         parsed_ratio = None
         if raw_ratio is not None and isinstance(raw_ratio, (int, float)):
             if raw_ratio >= 0 and raw_ratio < 999:
                 parsed_ratio = round(float(raw_ratio), 2)
 
+        t_content_path = t.get("content_path") if isinstance(t, dict) else getattr(t, "content_path", None)
+
         return {
-            "hash": t.hash,
-            "name": t.name,
-            "state": t.state,
-            "progress": round(t.progress * 100, 2),
-            "total_size": t.total_size,
-            "downloaded": t.downloaded,
-            "uploaded": t.uploaded,
-            "download_speed": t.dlspeed,
-            "upload_speed": t.upspeed,
-            "eta": t.eta,
-            "save_path": t.save_path,
-            "content_path": getattr(t, "content_path", None),
+            "hash": t.hash if hasattr(t, "hash") else t["hash"],
+            "name": t.name if hasattr(t, "name") else t["name"],
+            "state": t.state if hasattr(t, "state") else t["state"],
+            "progress": round((t.progress if hasattr(t, "progress") else t["progress"]) * 100, 2),
+            "total_size": t.total_size if hasattr(t, "total_size") else t["total_size"],
+            "downloaded": t.downloaded if hasattr(t, "downloaded") else t["downloaded"],
+            "uploaded": t.uploaded if hasattr(t, "uploaded") else t["uploaded"],
+            "download_speed": t.dlspeed if hasattr(t, "dlspeed") else t.get("dlspeed", 0),
+            "upload_speed": t.upspeed if hasattr(t, "upspeed") else t.get("upspeed", 0),
+            "eta": t.eta if hasattr(t, "eta") else t.get("eta", 0),
+            "save_path": t.save_path if hasattr(t, "save_path") else t.get("save_path", ""),
+            "content_path": t_content_path,
             "ratio": parsed_ratio,
-            "num_seeds": int(getattr(t, "num_seeds", 0) or 0),
-            "num_complete": int(getattr(t, "num_complete", 0) or 0),
-            "num_leechs": int(getattr(t, "num_leechs", 0) or 0),
-            "num_incomplete": int(getattr(t, "num_incomplete", 0) or 0),
+            "num_seeds": _extract_int_field(t, "num_seeds", "seeds"),
+            "num_complete": _extract_int_field(t, "num_complete"),
+            "num_leechs": _extract_int_field(t, "num_leechs", "num_leeches", "leechs", "peers"),
+            "num_incomplete": _extract_int_field(t, "num_incomplete"),
+            "added_on": _extract_int_field(t, "added_on"),
         }
 
     def pause_torrent(self, torrent_hash: str) -> None:

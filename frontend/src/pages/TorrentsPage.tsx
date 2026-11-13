@@ -7,9 +7,11 @@ import {
 import { useDriveAuthStatus } from "@/hooks/useDrive";
 import { useAppStore } from "@/stores/appStore";
 import { TorrentTable, TorrentToolbar, ActiveDriveUploads } from "@/components/torrents";
+import type { TorrentSortKey } from "@/components/torrents/TorrentTable";
+import type { SortDirection } from "@/types";
 import { DriveAuthModal, BatchUploadToDriveModal } from "@/components/drive";
 import { Button, Skeleton, TorrentsSkeleton } from "@/components/ui";
-import { formatBytes, formatSpeed, filterTorrents, isTorrentComplete } from "@/lib/utils";
+import { formatBytes, formatSpeed, filterTorrents, isTorrentComplete, cn } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -23,7 +25,30 @@ import {
   X,
   UploadCloud,
   CheckSquare,
+  ArrowUpDown,
+  Check,
 } from "lucide-react";
+
+interface SortOption {
+  key: TorrentSortKey;
+  dir: SortDirection;
+  label: string;
+}
+
+const SORT_OPTIONS: SortOption[] = [
+  { key: "added_on", dir: "desc", label: "Date Added (Newest)" },
+  { key: "added_on", dir: "asc", label: "Date Added (Oldest)" },
+  { key: "total_size", dir: "desc", label: "Size (Largest)" },
+  { key: "total_size", dir: "asc", label: "Size (Smallest)" },
+  { key: "num_seeds", dir: "desc", label: "Most Seeds" },
+  { key: "num_leechs", dir: "desc", label: "Most Leechers / Peers" },
+  { key: "name", dir: "asc", label: "Name (A → Z)" },
+  { key: "name", dir: "desc", label: "Name (Z → A)" },
+  { key: "progress", dir: "desc", label: "Progress (Highest)" },
+  { key: "download_speed", dir: "desc", label: "Download Speed" },
+  { key: "upload_speed", dir: "desc", label: "Upload Speed" },
+  { key: "ratio", dir: "desc", label: "Share Ratio" },
+];
 
 export function TorrentsPage() {
   const instance = useActiveInstance();
@@ -40,6 +65,16 @@ export function TorrentsPage() {
   const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
   const [batchUploadModalOpen, setBatchUploadModalOpen] = useState(false);
   const [isSelectMode, setIsSelectMode] = useState(false);
+  const [sortKey, setSortKey] = useState<TorrentSortKey>("added_on");
+  const [sortDir, setSortDir] = useState<SortDirection>("desc");
+  const [showSortMenu, setShowSortMenu] = useState(false);
+
+  const currentSortOption = SORT_OPTIONS.find(
+    (o) => o.key === sortKey && o.dir === sortDir
+  );
+  const currentSortLabel = currentSortOption
+    ? currentSortOption.label
+    : `${String(sortKey)} (${sortDir === "asc" ? "↑" : "↓"})`;
 
   const filtered = useMemo(
     () => filterTorrents(torrents || [], torrentFilter),
@@ -240,21 +275,68 @@ export function TorrentsPage() {
           </div>
         </div>
       ) : (
-        /* Normal Mode: Clean Bar with [Select] button */
+        /* Normal Mode: Clean Bar with [Select] button on Left and [Sort] on Right */
         <div className="flex items-center justify-between gap-2 text-xs text-text-muted">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsSelectMode(true)}
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium"
+            title="Select torrents"
+          >
+            <CheckSquare className="w-3.5 h-3.5 text-accent" />
+            <span>Select</span>
+          </button>
+
+          {/* Sort Dropdown */}
+          <div className="relative">
             <button
               type="button"
-              onClick={() => setIsSelectMode(true)}
+              onClick={() => setShowSortMenu(!showSortMenu)}
               className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium"
-              title="Select torrents"
+              title="Sort torrent list"
             >
-              <CheckSquare className="w-3.5 h-3.5 text-accent" />
-              <span>Select</span>
+              <ArrowUpDown className="w-3.5 h-3.5 text-accent" />
+              <span className="truncate max-w-[140px] sm:max-w-none">
+                {currentSortLabel}
+              </span>
             </button>
-            <span className="text-[11px] text-text-muted">
-              {filtered.length} torrents
-            </span>
+
+            {showSortMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowSortMenu(false)}
+                />
+                <div className="absolute right-0 top-9 z-50 min-w-[210px] max-h-[300px] overflow-y-auto bg-surface-overlay border border-glass-border rounded-xl shadow-2xl py-1 text-xs">
+                  {SORT_OPTIONS.map((opt) => {
+                    const isSelected =
+                      sortKey === opt.key && sortDir === opt.dir;
+                    return (
+                      <button
+                        key={`${opt.key}-${opt.dir}`}
+                        type="button"
+                        onClick={() => {
+                          setSortKey(opt.key);
+                          setSortDir(opt.dir);
+                          setShowSortMenu(false);
+                        }}
+                        className={cn(
+                          "w-full px-3 py-2 text-left hover:bg-glass-hover transition-colors flex items-center justify-between",
+                          isSelected
+                            ? "text-accent font-semibold bg-accent/10"
+                            : "text-text-secondary"
+                        )}
+                      >
+                        <span>{opt.label}</span>
+                        {isSelected && (
+                          <Check className="w-3.5 h-3.5 text-accent stroke-[2.5]" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -276,6 +358,12 @@ export function TorrentsPage() {
           filterKey={torrentFilter}
           isSelectMode={inSelectionMode}
           onEnterSelectMode={() => setIsSelectMode(true)}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSortChange={(k, d) => {
+            setSortKey(k);
+            setSortDir(d);
+          }}
         />
       )}
 
