@@ -25,6 +25,8 @@ import {
   Upload,
   HardDrive,
   Clock,
+  Users,
+  ArrowUpDown,
 } from "lucide-react";
 
 interface TorrentDetailModalProps {
@@ -104,7 +106,7 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
           </div>
 
           {/* Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
             <div className="p-3 rounded-xl bg-surface-elevated/40 border border-glass-border">
               <p className="text-xs text-text-muted flex items-center gap-1">
                 <HardDrive className="w-3.5 h-3.5" /> Total Size
@@ -137,10 +139,48 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
             </div>
             <div className="p-3 rounded-xl bg-surface-elevated/40 border border-glass-border">
               <p className="text-xs text-text-muted flex items-center gap-1">
+                <Users className="w-3.5 h-3.5 text-info" /> Seeds & Leechers
+              </p>
+              <div className="mt-1 flex items-center gap-3 text-xs font-mono font-semibold">
+                <span
+                  className="text-success"
+                  title={`Connected seeds: ${torrent.num_seeds ?? 0}${torrent.num_complete ? ` (swarm: ${torrent.num_complete})` : ""}`}
+                >
+                  {torrent.num_seeds ?? 0}
+                  {torrent.num_complete ? (
+                    <span className="text-text-muted text-[11px]">/{torrent.num_complete}</span>
+                  ) : null}
+                  <span className="text-text-muted text-[11px] ml-1 font-normal">seeds</span>
+                </span>
+                <span className="text-text-muted">·</span>
+                <span
+                  className="text-danger"
+                  title={`Connected leechers: ${torrent.num_leechs ?? 0}${torrent.num_incomplete ? ` (swarm: ${torrent.num_incomplete})` : ""}`}
+                >
+                  {torrent.num_leechs ?? 0}
+                  {torrent.num_incomplete ? (
+                    <span className="text-text-muted text-[11px]">/{torrent.num_incomplete}</span>
+                  ) : null}
+                  <span className="text-text-muted text-[11px] ml-1 font-normal">leechers</span>
+                </span>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-surface-elevated/40 border border-glass-border">
+              <p className="text-xs text-text-muted flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" /> ETA
               </p>
               <p className="font-mono font-semibold text-text-primary mt-1">
-                {formatEta(torrent.eta)}
+                {torrent.eta > 0 && torrent.eta < 8640000
+                  ? formatEta(torrent.eta)
+                  : "∞"}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-surface-elevated/40 border border-glass-border">
+              <p className="text-xs text-text-muted flex items-center gap-1">
+                <ArrowUpDown className="w-3.5 h-3.5 text-accent" /> Share Ratio
+              </p>
+              <p className="font-mono font-semibold text-text-primary mt-1">
+                {ratio}
               </p>
             </div>
           </div>

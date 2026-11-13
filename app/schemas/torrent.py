@@ -56,6 +56,10 @@ class TorrentItemResponse(BaseModel):
     save_path: str
     content_path: Optional[str] = None
     ratio: Optional[float] = None
+    num_seeds: Optional[int] = 0
+    num_complete: Optional[int] = 0
+    num_leechs: Optional[int] = 0
+    num_incomplete: Optional[int] = 0
 
 
 class TorrentActionResponse(BaseModel):

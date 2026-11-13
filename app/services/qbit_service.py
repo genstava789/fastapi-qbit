@@ -173,6 +173,10 @@ class QBitService:
                     "save_path": t.save_path,
                     "content_path": getattr(t, "content_path", None),
                     "ratio": parsed_ratio,
+                    "num_seeds": int(getattr(t, "num_seeds", 0) or 0),
+                    "num_complete": int(getattr(t, "num_complete", 0) or 0),
+                    "num_leechs": int(getattr(t, "num_leechs", 0) or 0),
+                    "num_incomplete": int(getattr(t, "num_incomplete", 0) or 0),
                 }
             )
         return items
@@ -204,6 +208,10 @@ class QBitService:
             "save_path": t.save_path,
             "content_path": getattr(t, "content_path", None),
             "ratio": parsed_ratio,
+            "num_seeds": int(getattr(t, "num_seeds", 0) or 0),
+            "num_complete": int(getattr(t, "num_complete", 0) or 0),
+            "num_leechs": int(getattr(t, "num_leechs", 0) or 0),
+            "num_incomplete": int(getattr(t, "num_incomplete", 0) or 0),
         }
 
     def pause_torrent(self, torrent_hash: str) -> None:

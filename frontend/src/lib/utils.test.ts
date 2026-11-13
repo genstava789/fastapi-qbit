@@ -13,6 +13,8 @@ import {
   normalizeTorrentActionResponse,
   calculateTorrentRatio,
   isTorrentComplete,
+  isTorrentDownloading,
+  getTorrentDownloadPriorityTier,
 } from "./utils";
 import type { TorrentItem } from "@/types";
 
@@ -299,6 +301,263 @@ describe("utils formatting", () => {
       expect(isTorrentComplete({ progress: 0, state: "metaDL" })).toBe(false);
       expect(isTorrentComplete({ progress: 85, state: "pausedDL" })).toBe(false);
       expect(isTorrentComplete({ progress: 0, state: "error" })).toBe(false);
+    });
+  });
+
+  describe("isTorrentDownloading", () => {
+    it("returns true for active downloads with progress < 100", () => {
+      expect(
+        isTorrentDownloading({
+          hash: "1",
+          name: "Test",
+          state: "downloading",
+          progress: 50,
+          total_size: 1000,
+          downloaded: 500,
+          uploaded: 0,
+          download_speed: 1024,
+          upload_speed: 0,
+          eta: 50,
+          save_path: "/downloads",
+        })
+      ).toBe(true);
+    });
+
+    it("returns true for queued or stalled downloads", () => {
+      expect(
+        isTorrentDownloading({
+          hash: "2",
+          name: "Queued",
+          state: "queuedDL",
+          progress: 10,
+          total_size: 1000,
+          downloaded: 100,
+          uploaded: 0,
+          download_speed: 0,
+          upload_speed: 0,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(true);
+      expect(
+        isTorrentDownloading({
+          hash: "3",
+          name: "Stalled",
+          state: "stalledDL",
+          progress: 20,
+          total_size: 1000,
+          downloaded: 200,
+          uploaded: 0,
+          download_speed: 0,
+          upload_speed: 0,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(true);
+    });
+
+    it("returns false when progress >= 100", () => {
+      expect(
+        isTorrentDownloading({
+          hash: "4",
+          name: "Complete",
+          state: "uploading",
+          progress: 100,
+          total_size: 1000,
+          downloaded: 1000,
+          uploaded: 500,
+          download_speed: 0,
+          upload_speed: 100,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(false);
+    });
+
+    it("returns false for paused or error downloads", () => {
+      expect(
+        isTorrentDownloading({
+          hash: "5",
+          name: "Paused",
+          state: "pausedDL",
+          progress: 50,
+          total_size: 1000,
+          downloaded: 500,
+          uploaded: 0,
+          download_speed: 0,
+          upload_speed: 0,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(false);
+      expect(
+        isTorrentDownloading({
+          hash: "6",
+          name: "Error",
+          state: "error",
+          progress: 0,
+          total_size: 1000,
+          downloaded: 0,
+          uploaded: 0,
+          download_speed: 0,
+          upload_speed: 0,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(false);
+    });
+  });
+
+  describe("getTorrentDownloadPriorityTier", () => {
+    it("assigns Tier 0 to actively downloading torrents", () => {
+      expect(
+        getTorrentDownloadPriorityTier({
+          hash: "1",
+          name: "Active DL",
+          state: "downloading",
+          progress: 25,
+          total_size: 1000,
+          downloaded: 250,
+          uploaded: 0,
+          download_speed: 500000,
+          upload_speed: 0,
+          eta: 10,
+          save_path: "/downloads",
+        })
+      ).toBe(0);
+    });
+
+    it("assigns Tier 1 to queued or stalled downloads", () => {
+      expect(
+        getTorrentDownloadPriorityTier({
+          hash: "2",
+          name: "Stalled DL",
+          state: "stalledDL",
+          progress: 50,
+          total_size: 1000,
+          downloaded: 500,
+          uploaded: 0,
+          download_speed: 0,
+          upload_speed: 0,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(1);
+    });
+
+    it("assigns Tier 2 to completed or seeding torrents", () => {
+      expect(
+        getTorrentDownloadPriorityTier({
+          hash: "3",
+          name: "Seeding",
+          state: "uploading",
+          progress: 100,
+          total_size: 1000,
+          downloaded: 1000,
+          uploaded: 2000,
+          download_speed: 0,
+          upload_speed: 50000,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(2);
+    });
+
+    it("assigns Tier 3 to paused or error torrents", () => {
+      expect(
+        getTorrentDownloadPriorityTier({
+          hash: "4",
+          name: "Paused",
+          state: "pausedDL",
+          progress: 30,
+          total_size: 1000,
+          downloaded: 300,
+          uploaded: 0,
+          download_speed: 0,
+          upload_speed: 0,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(3);
+      expect(
+        getTorrentDownloadPriorityTier({
+          hash: "5",
+          name: "Error",
+          state: "error",
+          progress: 0,
+          total_size: 1000,
+          downloaded: 0,
+          uploaded: 0,
+          download_speed: 0,
+          upload_speed: 0,
+          eta: 0,
+          save_path: "/downloads",
+        })
+      ).toBe(3);
+    });
+
+    it("strictly preserves lower tier number priority (Tier 0 < Tier 1 < Tier 2 < Tier 3)", () => {
+      const active = {
+        hash: "1",
+        name: "Active",
+        state: "downloading",
+        progress: 10,
+        total_size: 1000,
+        downloaded: 100,
+        uploaded: 0,
+        download_speed: 100,
+        upload_speed: 0,
+        eta: 10,
+        save_path: "/dl",
+      };
+      const stalled = {
+        hash: "2",
+        name: "Stalled",
+        state: "stalledDL",
+        progress: 90,
+        total_size: 1000,
+        downloaded: 900,
+        uploaded: 0,
+        download_speed: 0,
+        upload_speed: 0,
+        eta: 0,
+        save_path: "/dl",
+      };
+      const seeding = {
+        hash: "3",
+        name: "Seeding",
+        state: "uploading",
+        progress: 100,
+        total_size: 1000,
+        downloaded: 1000,
+        uploaded: 500,
+        download_speed: 0,
+        upload_speed: 100,
+        eta: 0,
+        save_path: "/dl",
+      };
+      const paused = {
+        hash: "4",
+        name: "Paused",
+        state: "pausedDL",
+        progress: 50,
+        total_size: 1000,
+        downloaded: 500,
+        uploaded: 0,
+        download_speed: 0,
+        upload_speed: 0,
+        eta: 0,
+        save_path: "/dl",
+      };
+
+      const tierActive = getTorrentDownloadPriorityTier(active);
+      const tierStalled = getTorrentDownloadPriorityTier(stalled);
+      const tierSeeding = getTorrentDownloadPriorityTier(seeding);
+      const tierPaused = getTorrentDownloadPriorityTier(paused);
+
+      expect(tierActive).toBeLessThan(tierStalled);
+      expect(tierStalled).toBeLessThan(tierSeeding);
+      expect(tierSeeding).toBeLessThan(tierPaused);
     });
   });
 });

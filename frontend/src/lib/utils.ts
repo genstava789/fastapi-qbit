@@ -343,4 +343,53 @@ export function normalizeTorrentActionResponse(
   return response;
 }
 
+/**
+ * Determines whether a torrent is actively or queued downloading.
+ */
+export function isTorrentDownloading(t: TorrentItem): boolean {
+  if (t.progress >= 100) return false;
+  return (
+    t.download_speed > 0 ||
+    ["downloading", "forcedDL", "metaDL", "allocating", "stalledDL", "queuedDL", "checkingDL"].includes(t.state) ||
+    (t.state.includes("DL") && !t.state.includes("paused"))
+  );
+}
+
+/**
+ * Returns priority tier for ordering torrents (lower number = higher priority).
+ * 0: Actively downloading (dlspeed > 0 or in active downloading states with progress < 100)
+ * 1: Queued / stalled downloading (progress < 100)
+ * 2: Completed / Seeding
+ * 3: Paused / Inactive / Error
+ */
+export function getTorrentDownloadPriorityTier(t: TorrentItem): number {
+  if (
+    (t.download_speed > 0 ||
+      ["downloading", "forcedDL", "metaDL", "allocating"].includes(t.state)) &&
+    t.progress < 100
+  ) {
+    return 0;
+  }
+
+  if (
+    t.progress < 100 &&
+    (t.state === "stalledDL" ||
+      t.state === "queuedDL" ||
+      t.state === "checkingDL" ||
+      t.state.includes("DL")) &&
+    !t.state.includes("paused")
+  ) {
+    return 1;
+  }
+
+  if (
+    t.progress >= 100 ||
+    ["uploading", "stalledUP", "forcedUP", "pausedUP"].includes(t.state)
+  ) {
+    return 2;
+  }
+
+  return 3;
+}
+
 

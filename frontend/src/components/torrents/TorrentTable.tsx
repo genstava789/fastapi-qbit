@@ -7,6 +7,8 @@ import {
   getTorrentStateLabel,
   paginateItems,
   calculateTorrentRatio,
+  isTorrentDownloading,
+  getTorrentDownloadPriorityTier,
 } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
 import { usePauseTorrent, useResumeTorrent, useApi } from "@/hooks/useTorrents";
@@ -28,6 +30,7 @@ import {
   ChevronLeft,
   ChevronRight,
   UploadCloud,
+  Users,
 } from "lucide-react";
 import type { TorrentItem, SortDirection, DriveUploadProgress } from "@/types";
 import { TorrentDetailModal } from "./TorrentDetailModal";
@@ -135,6 +138,7 @@ function MobileTorrentCard({
   };
 
   const isPaused = torrent.state.includes("paused");
+  const isDownloading = isTorrentDownloading(torrent);
 
   return (
     <div
@@ -143,6 +147,7 @@ function MobileTorrentCard({
       onTouchMove={handleTouchEndOrMove}
       className={cn(
         "glass rounded-2xl p-4 transition-all select-none cursor-pointer",
+        isDownloading && "border-l-4 border-l-accent bg-accent/[0.03]",
         isSelected
           ? "border-accent bg-accent/10 ring-1 ring-accent/40"
           : "border-glass-border"
@@ -241,13 +246,13 @@ function MobileTorrentCard({
       {/* Readable Meta Grid */}
       <div
         onClick={handleCardClick}
-        className="mt-3 grid grid-cols-3 gap-3 p-3 rounded-xl bg-surface-elevated/80 border border-glass-border cursor-pointer"
+        className="mt-3 grid grid-cols-4 gap-2 sm:gap-3 p-3 rounded-xl bg-surface-elevated/80 border border-glass-border cursor-pointer"
       >
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
             Size
           </p>
-          <p className="text-sm font-mono font-semibold text-text-primary mt-0.5">
+          <p className="text-sm font-mono font-semibold text-text-primary mt-0.5 truncate">
             {formatBytes(torrent.total_size)}
           </p>
         </div>
@@ -257,6 +262,26 @@ function MobileTorrentCard({
           </p>
           <p className="text-sm font-mono font-semibold text-text-primary mt-0.5">
             {ratio}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
+            Peers
+          </p>
+          <p className="text-sm font-mono font-semibold text-text-primary mt-0.5 whitespace-nowrap">
+            <span
+              className="text-success font-semibold"
+              title={`Seeds: ${torrent.num_seeds ?? 0}${torrent.num_complete ? `/${torrent.num_complete}` : ""}`}
+            >
+              {torrent.num_seeds ?? 0}
+            </span>
+            <span className="text-text-muted font-normal mx-0.5">/</span>
+            <span
+              className="text-danger font-semibold"
+              title={`Leechers: ${torrent.num_leechs ?? 0}${torrent.num_incomplete ? `/${torrent.num_incomplete}` : ""}`}
+            >
+              {torrent.num_leechs ?? 0}
+            </span>
           </p>
         </div>
         <div>
@@ -273,7 +298,7 @@ function MobileTorrentCard({
 
       {/* Bottom Speed & Compact Icon-Only 44x44 Play/Pause Button */}
       <div className="mt-3 flex items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-mono min-w-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-mono min-w-0">
           <span className="flex items-center gap-1 text-accent font-semibold whitespace-nowrap">
             <Download className="w-4 h-4 flex-shrink-0" />
             {torrent.download_speed > 0
@@ -285,6 +310,15 @@ function MobileTorrentCard({
             {torrent.upload_speed > 0
               ? formatSpeed(torrent.upload_speed)
               : "0 B/s"}
+          </span>
+          <span
+            className="flex items-center gap-1 text-xs text-text-muted font-mono whitespace-nowrap"
+            title={`Seeds: ${torrent.num_seeds ?? 0}${torrent.num_complete ? `/${torrent.num_complete}` : ""} · Leechers: ${torrent.num_leechs ?? 0}${torrent.num_incomplete ? `/${torrent.num_incomplete}` : ""}`}
+          >
+            <Users className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
+            <span className="text-success font-semibold">{torrent.num_seeds ?? 0}S</span>
+            <span>·</span>
+            <span className="text-danger font-semibold">{torrent.num_leechs ?? 0}L</span>
           </span>
         </div>
 
@@ -452,10 +486,35 @@ export function TorrentTable({
       );
     }
     list.sort((a, b) => {
+      // 1. Download Priority: Torrents currently being downloaded are prioritized at the very top
+      const tierA = getTorrentDownloadPriorityTier(a);
+      const tierB = getTorrentDownloadPriorityTier(b);
+      if (tierA !== tierB) {
+        return tierA - tierB;
+      }
+
+      // Within active downloads (Tier 0), default to sorting by download speed descending
+      if (tierA === 0 && sortKey === "name" && sortDir === "asc") {
+        if (b.download_speed !== a.download_speed) {
+          return b.download_speed - a.download_speed;
+        }
+      }
+
+      // 2. User-chosen sort column and direction
       if (sortKey === "ratio") {
         const aRatio = parseFloat(getRatio(a)) || 0;
         const bRatio = parseFloat(getRatio(b)) || 0;
         return sortDir === "asc" ? aRatio - bRatio : bRatio - aRatio;
+      }
+      if (sortKey === "num_seeds") {
+        const aSeeds = a.num_seeds ?? 0;
+        const bSeeds = b.num_seeds ?? 0;
+        return sortDir === "asc" ? aSeeds - bSeeds : bSeeds - aSeeds;
+      }
+      if (sortKey === "num_leechs") {
+        const aLeechs = a.num_leechs ?? 0;
+        const bLeechs = b.num_leechs ?? 0;
+        return sortDir === "asc" ? aLeechs - bLeechs : bLeechs - aLeechs;
       }
       const aVal = a[sortKey];
       const bVal = b[sortKey];
@@ -602,6 +661,19 @@ export function TorrentTable({
                     />
                   </div>
                 </th>
+                <th
+                  className="px-4 py-3 text-right w-24 cursor-pointer hover:text-text-primary transition-colors"
+                  onClick={() => toggleSort("num_seeds")}
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    <Users className="w-3 h-3" /> Peers{" "}
+                    <SortIcon
+                      col="num_seeds"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                    />
+                  </div>
+                </th>
                 <th className="px-4 py-3 text-right w-28">
                   <div className="flex items-center justify-end gap-1">
                     <Download className="w-3 h-3" /> Speed
@@ -619,6 +691,7 @@ export function TorrentTable({
             <tbody>
               {visibleTorrents.map((t) => {
                 const driveInfo = getDriveInfo(t);
+                const isDownloading = isTorrentDownloading(t);
                 return (
                   <tr
                     key={t.hash}
@@ -628,6 +701,7 @@ export function TorrentTable({
                     }}
                     className={cn(
                       "border-b border-glass-border/50 transition-colors",
+                      isDownloading && "bg-accent/[0.04]",
                       selectedTorrents.has(t.hash)
                         ? "bg-accent/5"
                         : "hover:bg-glass-hover/30"
@@ -711,6 +785,29 @@ export function TorrentTable({
                         )}
                       >
                         {getRatio(t)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs whitespace-nowrap">
+                      <span
+                        className="text-success font-semibold"
+                        title={`Seeds: ${t.num_seeds ?? 0}${t.num_complete ? ` connected of ${t.num_complete} in swarm` : ""}`}
+                      >
+                        {t.num_seeds ?? 0}
+                        {t.num_complete ? (
+                          <span className="text-text-muted text-[11px]">/{t.num_complete}</span>
+                        ) : null}
+                        <span className="text-[10px] text-text-muted ml-0.5">S</span>
+                      </span>
+                      <span className="text-text-muted mx-1.5">·</span>
+                      <span
+                        className="text-danger font-semibold"
+                        title={`Leechers: ${t.num_leechs ?? 0}${t.num_incomplete ? ` connected of ${t.num_incomplete} in swarm` : ""}`}
+                      >
+                        {t.num_leechs ?? 0}
+                        {t.num_incomplete ? (
+                          <span className="text-text-muted text-[11px]">/{t.num_incomplete}</span>
+                        ) : null}
+                        <span className="text-[10px] text-text-muted ml-0.5">L</span>
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">

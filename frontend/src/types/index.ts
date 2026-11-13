@@ -21,6 +21,10 @@ export interface TorrentItem {
   save_path: string;
   content_path?: string;
   ratio?: number;
+  num_seeds?: number;
+  num_complete?: number;
+  num_leechs?: number;
+  num_incomplete?: number;
 }
 
 export interface HealthStatus {
