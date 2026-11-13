@@ -1,13 +1,13 @@
 import { cn } from "@/lib/utils";
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
-interface BadgeProps {
+interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   children: ReactNode;
   variant?: "default" | "success" | "warning" | "danger" | "info" | "accent";
   className?: string;
 }
 
-export function Badge({ children, variant = "default", className }: BadgeProps) {
+export function Badge({ children, variant = "default", className, ...props }: BadgeProps) {
   const variants = {
     default: "bg-surface-elevated text-text-secondary border-glass-border",
     success: "bg-success/10 text-success border-success/20",
@@ -24,6 +24,7 @@ export function Badge({ children, variant = "default", className }: BadgeProps) 
         variants[variant],
         className
       )}
+      {...props}
     >
       {children}
     </span>

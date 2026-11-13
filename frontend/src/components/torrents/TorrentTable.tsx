@@ -5,6 +5,8 @@ import {
   formatSpeed,
   formatEta,
   getTorrentStateLabel,
+  getTorrentStateTooltip,
+  isTorrentComplete,
   paginateItems,
   calculateTorrentRatio,
   isTorrentDownloading,
@@ -74,9 +76,9 @@ function SortIcon({
 }
 
 function getBadgeVariant(state: string) {
+  if (state.includes("paused")) return "default" as const;
   if (state.includes("UP") || state === "uploading") return "success" as const;
   if (state === "downloading" || state === "forcedDL") return "accent" as const;
-  if (state.includes("paused")) return "default" as const;
   if (state === "error" || state === "missingFiles") return "danger" as const;
   if (state.includes("stalled")) return "warning" as const;
   return "info" as const;
@@ -189,12 +191,15 @@ function MobileTorrentCard({
           onClick={handleCardClick}
           className="flex-1 min-w-0 pt-0.5 cursor-pointer"
         >
-          <h3 className="text-[15px] font-semibold text-text-primary leading-snug line-clamp-2 break-words">
+          <h3 className="text-[14px] sm:text-[15px] font-semibold text-text-primary leading-snug line-clamp-3 break-words">
             {torrent.name}
           </h3>
           <div className="flex flex-wrap items-center gap-2 mt-2">
-            <Badge variant={getBadgeVariant(torrent.state)}>
-              {getTorrentStateLabel(torrent.state)}
+            <Badge
+              variant={getBadgeVariant(torrent.state)}
+              title={getTorrentStateTooltip(torrent.state, torrent.progress, torrent.upload_speed)}
+            >
+              {getTorrentStateLabel(torrent.state, torrent.progress, torrent.upload_speed)}
             </Badge>
             <span className="text-xs font-mono font-semibold text-text-primary">
               {torrent.progress.toFixed(1)}%
@@ -256,7 +261,7 @@ function MobileTorrentCard({
         </div>
 
         {/* Quick Top Actions: Play/Pause and More */}
-        <div className="flex items-center gap-2 -mr-1 -mt-1 flex-shrink-0">
+        <div className="flex items-center gap-1.5 -mr-1 -mt-0.5 flex-shrink-0">
           {isPaused ? (
             <button
               type="button"
@@ -266,9 +271,9 @@ function MobileTorrentCard({
               }}
               aria-label={`Resume ${torrent.name}`}
               title="Resume"
-              className="w-10 h-10 rounded-xl bg-success/15 text-success border border-success/30 flex items-center justify-center active:scale-95 transition-all"
+              className="w-8 h-8 rounded-lg bg-success/15 text-success border border-success/30 flex items-center justify-center active:scale-95 transition-all"
             >
-              <Play className="w-4 h-4 fill-current" />
+              <Play className="w-3.5 h-3.5 fill-current" />
             </button>
           ) : (
             <button
@@ -279,9 +284,9 @@ function MobileTorrentCard({
               }}
               aria-label={`Pause ${torrent.name}`}
               title="Pause"
-              className="w-10 h-10 rounded-xl bg-warning/15 text-warning border border-warning/30 flex items-center justify-center active:scale-95 transition-all"
+              className="w-8 h-8 rounded-lg bg-warning/15 text-warning border border-warning/30 flex items-center justify-center active:scale-95 transition-all"
             >
-              <Pause className="w-4 h-4 fill-current" />
+              <Pause className="w-3.5 h-3.5 fill-current" />
             </button>
           )}
 
@@ -292,9 +297,9 @@ function MobileTorrentCard({
               onOpenMenu();
             }}
             aria-label={`More actions for ${torrent.name}`}
-            className="w-10 h-10 p-2 flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary active:bg-glass-hover active:scale-95 transition-all"
+            className="w-8 h-8 p-1.5 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary active:bg-glass-hover active:scale-95 transition-all"
           >
-            <MoreVertical className="w-5 h-5" />
+            <MoreVertical className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -307,7 +312,7 @@ function MobileTorrentCard({
       {/* Readable Meta Grid */}
       <div
         onClick={handleCardClick}
-        className="mt-3 grid grid-cols-4 gap-2 sm:gap-3 p-3 rounded-xl bg-surface-elevated/80 border border-glass-border cursor-pointer"
+        className="mt-3 grid grid-cols-4 gap-2 sm:gap-3 p-3 rounded-xl bg-surface-elevated/80 border border-glass-border cursor-pointer text-left"
       >
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
@@ -345,14 +350,16 @@ function MobileTorrentCard({
             </span>
           </p>
         </div>
-        <div>
+        <div className="text-right">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
-            ETA
+            {isTorrentComplete(torrent) ? "Uploaded" : "ETA"}
           </p>
-          <p className="text-sm font-mono font-semibold text-text-primary mt-0.5">
-            {torrent.eta > 0 && torrent.eta < 8640000
-              ? formatEta(torrent.eta)
-              : "∞"}
+          <p className="text-sm font-mono font-semibold text-text-primary mt-0.5 truncate">
+            {isTorrentComplete(torrent)
+              ? formatBytes(torrent.uploaded)
+              : torrent.eta > 0 && torrent.eta < 8640000
+                ? formatEta(torrent.eta)
+                : "—"}
           </p>
         </div>
       </div>
@@ -816,8 +823,11 @@ export function TorrentTable({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={getBadgeVariant(t.state)}>
-                        {getTorrentStateLabel(t.state)}
+                      <Badge
+                        variant={getBadgeVariant(t.state)}
+                        title={getTorrentStateTooltip(t.state, t.progress, t.upload_speed)}
+                      >
+                        {getTorrentStateLabel(t.state, t.progress, t.upload_speed)}
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
@@ -868,7 +878,11 @@ export function TorrentTable({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right text-text-secondary font-mono text-xs">
-                      {t.eta > 0 && t.eta < 8640000 ? formatEta(t.eta) : "—"}
+                      {isTorrentComplete(t)
+                        ? "—"
+                        : t.eta > 0 && t.eta < 8640000
+                          ? formatEta(t.eta)
+                          : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">

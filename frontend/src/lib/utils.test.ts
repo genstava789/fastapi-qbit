@@ -5,6 +5,7 @@ import {
   formatEta,
   getTorrentStateColor,
   getTorrentStateLabel,
+  getTorrentStateTooltip,
   filterTorrents,
   paginateItems,
   formatUptime,
@@ -98,8 +99,15 @@ describe("utils formatting", () => {
   it("maps torrent states to readable labels and colors", () => {
     expect(getTorrentStateLabel("downloading")).toBe("Downloading");
     expect(getTorrentStateLabel("uploading")).toBe("Seeding");
+    expect(getTorrentStateLabel("stalledUP")).toBe("Completed");
+    expect(getTorrentStateLabel("stalledUP", 100, 500)).toBe("Seeding");
+    expect(getTorrentStateLabel("stalledDL")).toBe("Stalled");
     expect(getTorrentStateLabel("pausedDL")).toBe("Paused");
+    expect(getTorrentStateLabel("pausedUP")).toBe("Paused");
     expect(getTorrentStateLabel("unknownState")).toBe("unknownState");
+
+    expect(getTorrentStateTooltip("stalledDL")).toContain("stalled");
+    expect(getTorrentStateTooltip("stalledUP")).toContain("Selesai");
 
     expect(getTorrentStateColor("downloading")).toBe("text-accent");
     expect(getTorrentStateColor("uploading")).toBe("text-success");

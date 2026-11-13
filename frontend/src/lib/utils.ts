@@ -74,14 +74,24 @@ export function getTorrentStateBg(state: string): string {
   return stateMap[state] || "bg-surface-elevated text-text-secondary border-glass-border";
 }
 
-export function getTorrentStateLabel(state: string): string {
+export function getTorrentStateLabel(
+  state: string,
+  progress?: number,
+  uploadSpeed?: number
+): string {
+  if (state === "stalledUP") {
+    return uploadSpeed && uploadSpeed > 0 ? "Seeding" : "Completed";
+  }
+  if (state === "pausedUP") {
+    return "Paused";
+  }
   const labels: Record<string, string> = {
     uploading: "Seeding",
-    stalledUP: "Seeding (stalled)",
+    stalledUP: "Completed",
     downloading: "Downloading",
     stalledDL: "Stalled",
     pausedDL: "Paused",
-    pausedUP: "Completed",
+    pausedUP: "Paused",
     queuedDL: "Queued",
     queuedUP: "Queued",
     checkingDL: "Checking",
@@ -95,6 +105,39 @@ export function getTorrentStateLabel(state: string): string {
     metaDL: "Fetching Metadata",
   };
   return labels[state] || state;
+}
+
+export function getTorrentStateTooltip(
+  state: string,
+  progress?: number,
+  uploadSpeed?: number
+): string {
+  switch (state) {
+    case "stalledDL":
+      return "Download tertunda (stalled): Belum ada seeder aktif atau koneksi ke peers terhambat.";
+    case "stalledUP":
+      return "Selesai diunduh (100%): Siap seeding otomatis saat ada leecher yang meminta data.";
+    case "uploading":
+    case "forcedUP":
+      return "Sedang seeding: Mengunggah data ke leecher aktif.";
+    case "downloading":
+    case "forcedDL":
+      return "Sedang mengunduh file dari peers/seeder.";
+    case "pausedDL":
+    case "pausedUP":
+      return "Torrent sedang dijeda (paused).";
+    case "queuedDL":
+    case "queuedUP":
+      return "Dalam antrean giliran (queued).";
+    case "checkingDL":
+    case "checkingUP":
+      return "Sedang memeriksa integritas data file (checking).";
+    case "error":
+    case "missingFiles":
+      return "Terjadi kesalahan pada torrent atau file penyimpanan tidak ditemukan.";
+    default:
+      return getTorrentStateLabel(state, progress, uploadSpeed);
+  }
 }
 
 export function filterTorrents(

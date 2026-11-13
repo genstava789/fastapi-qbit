@@ -12,6 +12,8 @@ import {
   formatSpeed,
   formatEta,
   getTorrentStateLabel,
+  getTorrentStateTooltip,
+  isTorrentComplete,
   calculateTorrentRatio,
 } from "@/lib/utils";
 import {
@@ -77,18 +79,21 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
             <div className="flex items-center gap-2 mt-2">
               <Badge
                 variant={
-                  torrent.state.includes("UP") || torrent.state === "uploading"
+                  torrent.state.includes("paused")
+                    ? "default"
+                    : torrent.state.includes("UP") || torrent.state === "uploading"
                     ? "success"
                     : torrent.state === "downloading" || torrent.state === "forcedDL"
                     ? "accent"
-                    : torrent.state.includes("paused")
-                    ? "default"
                     : torrent.state === "error" || torrent.state === "missingFiles"
                     ? "danger"
+                    : torrent.state.includes("stalled")
+                    ? "warning"
                     : "info"
                 }
+                title={getTorrentStateTooltip(torrent.state, torrent.progress, torrent.upload_speed)}
               >
-                {getTorrentStateLabel(torrent.state)}
+                {getTorrentStateLabel(torrent.state, torrent.progress, torrent.upload_speed)}
               </Badge>
               <span className="text-xs text-text-muted font-mono">
                 Ratio: {ratio}
@@ -164,9 +169,11 @@ export function TorrentDetailModal({ hash, onClose }: TorrentDetailModalProps) {
                 <Clock className="w-3.5 h-3.5" /> ETA
               </p>
               <p className="font-mono font-semibold text-text-primary mt-1">
-                {torrent.eta > 0 && torrent.eta < 8640000
-                  ? formatEta(torrent.eta)
-                  : "∞"}
+                {isTorrentComplete(torrent)
+                  ? "—"
+                  : torrent.eta > 0 && torrent.eta < 8640000
+                    ? formatEta(torrent.eta)
+                    : "—"}
               </p>
             </div>
             <div className="p-3 rounded-xl bg-surface-elevated/40 border border-glass-border">
