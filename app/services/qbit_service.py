@@ -262,6 +262,16 @@ class QBitService:
         client = self.get_client()
         client.torrents_add_trackers(torrent_hash=torrent_hash, urls=trackers)
 
+    def get_transfer_info(self) -> Dict[str, Any]:
+        """Retrieves global transfer statistics (speeds, total data transferred, etc.)."""
+        try:
+            client = self.get_client()
+            info = client.transfer_info()
+            return dict(info) if info else {}
+        except Exception as e:
+            logger.warning(f"Failed to fetch transfer info: {e}")
+            return {}
+
 
 qbit_service = QBitService()
 

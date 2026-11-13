@@ -19,7 +19,10 @@ async def test_root_dashboard():
 
 
 @pytest.mark.anyio
-async def test_health_endpoint():
+async def test_health_endpoint(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    monkeypatch.setattr(qbit_service, "check_connection", lambda: (True, "v5.3.0"))
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/api/v1/health")

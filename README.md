@@ -6,6 +6,7 @@ API RESTful modern berbasis **FastAPI** dan library **qbittorrent-api** untuk me
 
 ## 📌 Fitur Utama
 
+- 🤖 **Telegram Bot (Pyrogram)**: Pantau kecepatan download/upload dan ringkasan torrent secara instan via perintah `/status` dengan tombol interaktif refresh.
 - 🧲 **Add Magnet Links**: Tambahkan magnet link torrent langsung melalui HTTP POST request (cURL, script, webhook, atau UI).
 - 📁 **Upload .torrent Files**: Upload file `.torrent` langsung melalui endpoint `multipart/form-data`.
 - 💾 **Export .torrent Files**: Unduh kembali file `.torrent` yang sedang aktif di-seed atau di-download.
@@ -97,6 +98,27 @@ fastapi-qbit/
 ```bash
 docker compose up -d
 ```
+
+### Opsi 3: Menjalankan Telegram Bot (Pyrogram)
+1. Atur konfigurasi token bot di `.env`:
+   ```env
+   TELEGRAM_BOT_TOKEN="your_bot_token_from_botfather"
+   TELEGRAM_API_ID="your_api_id"
+   TELEGRAM_API_HASH="your_api_hash"
+   # Opsional: ID pengguna yang berhak mengakses bot (pisahkan koma)
+   TELEGRAM_AUTHORIZED_USERS="12345678,98765432"
+   ```
+2. Jalankan bot:
+   ```bash
+   python -m bot
+   ```
+   Atau via Docker Compose:
+   ```bash
+   docker compose --profile bot up -d bot
+   ```
+3. Di Telegram, gunakan perintah:
+   - `/status` : Menampilkan ringkasan unduhan, unggahan aktif, kecepatan global, storage, dan tombol interaktif untuk *refresh* atau filter.
+   - `/start` atau `/help` : Panduan penggunaan bot.
 
 ---
 

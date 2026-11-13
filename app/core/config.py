@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     PROWLARR_API_KEY: str | None = None
     PROWLARR_SETTINGS_FILE: str = "prowlarr_settings.json"
 
+    # Telegram Bot Settings (Pyrogram)
+    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_API_ID: int | None = None
+    TELEGRAM_API_HASH: str | None = None
+    TELEGRAM_BOT_NAME: str = "qbit_bot"
+    TELEGRAM_AUTHORIZED_USERS: str | None = None
+
     @property
     def qbit_base_url(self) -> str:
         return f"{self.QBIT_HOST}:{self.QBIT_PORT}"
