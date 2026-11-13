@@ -225,17 +225,48 @@ function MobileTorrentCard({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenMenu();
-          }}
-          aria-label={`More actions for ${torrent.name}`}
-          className="min-w-[44px] min-h-[44px] -mr-2 -mt-1 flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary active:bg-glass-hover flex-shrink-0"
-        >
-          <MoreVertical className="w-5 h-5" />
-        </button>
+        {/* Quick Top Actions: Play/Pause and More */}
+        <div className="flex items-center gap-1 -mr-2 -mt-1 flex-shrink-0">
+          {isPaused ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onResume();
+              }}
+              aria-label={`Resume ${torrent.name}`}
+              title="Resume"
+              className="w-10 h-10 rounded-xl bg-success/15 text-success border border-success/30 flex items-center justify-center active:scale-95 transition-all"
+            >
+              <Play className="w-4 h-4 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPause();
+              }}
+              aria-label={`Pause ${torrent.name}`}
+              title="Pause"
+              className="w-10 h-10 rounded-xl bg-warning/15 text-warning border border-warning/30 flex items-center justify-center active:scale-95 transition-all"
+            >
+              <Pause className="w-4 h-4 fill-current" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMenu();
+            }}
+            aria-label={`More actions for ${torrent.name}`}
+            className="w-10 h-10 flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary active:bg-glass-hover"
+          >
+            <MoreVertical className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Progress Bar */}
@@ -293,63 +324,6 @@ function MobileTorrentCard({
               ? formatEta(torrent.eta)
               : "∞"}
           </p>
-        </div>
-      </div>
-
-      {/* Bottom Speed & Compact Icon-Only 44x44 Play/Pause Button */}
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-mono min-w-0">
-          <span className="flex items-center gap-1 text-accent font-semibold whitespace-nowrap">
-            <Download className="w-4 h-4 flex-shrink-0" />
-            {torrent.download_speed > 0
-              ? formatSpeed(torrent.download_speed)
-              : "0 B/s"}
-          </span>
-          <span className="flex items-center gap-1 text-success font-semibold whitespace-nowrap">
-            <Upload className="w-4 h-4 flex-shrink-0" />
-            {torrent.upload_speed > 0
-              ? formatSpeed(torrent.upload_speed)
-              : "0 B/s"}
-          </span>
-          <span
-            className="flex items-center gap-1 text-xs text-text-muted font-mono whitespace-nowrap"
-            title={`Seeds: ${torrent.num_seeds ?? 0}${torrent.num_complete ? `/${torrent.num_complete}` : ""} · Leechers: ${torrent.num_leechs ?? 0}${torrent.num_incomplete ? `/${torrent.num_incomplete}` : ""}`}
-          >
-            <Users className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
-            <span className="text-success font-semibold">{torrent.num_seeds ?? 0}S</span>
-            <span>·</span>
-            <span className="text-danger font-semibold">{torrent.num_leechs ?? 0}L</span>
-          </span>
-        </div>
-
-        <div className="flex-shrink-0">
-          {isPaused ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onResume();
-              }}
-              aria-label={`Resume ${torrent.name}`}
-              title="Resume"
-              className="w-11 h-11 rounded-xl bg-success/15 text-success border border-success/30 flex items-center justify-center active:scale-95 transition-transform"
-            >
-              <Play className="w-5 h-5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onPause();
-              }}
-              aria-label={`Pause ${torrent.name}`}
-              title="Pause"
-              className="w-11 h-11 rounded-xl bg-warning/15 text-warning border border-warning/30 flex items-center justify-center active:scale-95 transition-transform"
-            >
-              <Pause className="w-5 h-5" />
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -1132,6 +1106,32 @@ export function TorrentTable({
               <Info className="w-5 h-5 text-info" />
               View Torrent Details
             </button>
+
+            {mobileSheetTorrent.state.includes("paused") ? (
+              <button
+                type="button"
+                onClick={() => {
+                  resumeMutation.mutate(mobileSheetTorrent.hash);
+                  setMobileSheetTorrent(null);
+                }}
+                className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-success hover:bg-success/10"
+              >
+                <Play className="w-5 h-5 fill-current" />
+                Resume Torrent
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  pauseMutation.mutate(mobileSheetTorrent.hash);
+                  setMobileSheetTorrent(null);
+                }}
+                className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-warning hover:bg-warning/10"
+              >
+                <Pause className="w-5 h-5 fill-current" />
+                Pause Torrent
+              </button>
+            )}
 
             <button
               type="button"
