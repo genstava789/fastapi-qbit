@@ -25,6 +25,7 @@ async def start_help_command_handler(client: Client, message: Message):
         "Bot ini terhubung langsung ke daemon qBittorrent Anda untuk memantau aktivitas unduhan dan unggahan secara real-time.\n\n"
         "📌 <b>Perintah yang Tersedia:</b>\n"
         "• <code>/status</code> - Pantau kecepatan transfer, progres torrent yang sedang aktif (download/upload), dan storage.\n"
+        "• <code>/shell &lt;cmd&gt;</code> - Menjalankan perintah Linux shell di server (contoh: <code>/shell ls</code>).\n"
         "• <code>/help</code> - Menampilkan pesan panduan ini.\n\n"
         "Tekan tombol di bawah untuk melihat status qBittorrent saat ini:"
     )

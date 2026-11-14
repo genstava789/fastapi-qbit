@@ -1,9 +1,19 @@
+import asyncio
+from asyncio import create_subprocess_exec, create_subprocess_shell
+from asyncio.subprocess import PIPE
+from functools import wraps
 import html
+import logging
 import os
+import shlex
 import shutil
 import time
-from typing import Set
+from typing import Any, BinaryIO, Set, Union
 from app.core.config import settings
+
+LOGGER = logging.getLogger("qbit_bot")
+logger = LOGGER
+bot_loop = None
 
 
 def format_bytes(bytes_num: int | float, decimals: int = 2) -> str:
@@ -222,3 +232,82 @@ def get_disk_space_info() -> str:
         return f"{free_formatted} free / {total_formatted}"
     except Exception:
         return "Disk info unavailable"
+
+
+def get_bot_loop():
+    """Gets or initializes the current running event loop."""
+    global bot_loop
+    if bot_loop is None or not bot_loop.is_running():
+        try:
+            bot_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                bot_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                bot_loop = asyncio.new_event_loop()
+    return bot_loop
+
+
+def new_task(func):
+    """Decorator to run an async function as an asyncio Task."""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        loop = get_bot_loop()
+        task = loop.create_task(func(*args, **kwargs))
+        return task
+
+    return wrapper
+
+
+async def cmd_exec(cmd: Union[str, list], shell: bool = False):
+    """Executes a command asynchronously and returns (stdout, stderr, returncode)."""
+    if shell:
+        proc = await create_subprocess_shell(cmd, stdout=PIPE, stderr=PIPE)
+    else:
+        if isinstance(cmd, str):
+            cmd = shlex.split(cmd)
+        proc = await create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = await proc.communicate()
+    try:
+        stdout = stdout.decode().strip()
+    except Exception:
+        stdout = "Unable to decode the response!"
+    try:
+        stderr = stderr.decode().strip()
+    except Exception:
+        stderr = "Unable to decode the error!"
+    return stdout, stderr, proc.returncode
+
+
+async def send_message(message: Any, text: str, reply_markup=None):
+    """Sends a text message as reply to the given message with error fallback."""
+    try:
+        return await message.reply_text(
+            text=text,
+            reply_markup=reply_markup,
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        try:
+            return await message.reply_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=None,
+            )
+        except Exception as e2:
+            logger.error(f"Error sending plain text message: {e2}")
+            return None
+
+
+async def send_file(message: Any, file: Any, caption: str = ""):
+    """Sends a document or file as reply to the given message."""
+    try:
+        return await message.reply_document(
+            document=file,
+            caption=caption,
+        )
+    except Exception as e:
+        logger.error(f"Error sending file: {e}")
+        return None
+

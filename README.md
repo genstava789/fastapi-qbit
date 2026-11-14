@@ -118,6 +118,7 @@ docker compose up -d
    ```
 3. Di Telegram, gunakan perintah:
    - `/status` : Menampilkan ringkasan unduhan, unggahan aktif, kecepatan global, storage, dan tombol interaktif untuk *refresh* atau filter.
+   - `/shell <command>` : Menjalankan Linux command di server/container (misal: `/shell ls`, `/shell df -h`, `/sh uptime`). Output panjang (>3000 karakter) otomatis dikirim sebagai dokumen `shell_output.txt`.
    - `/start` atau `/help` : Panduan penggunaan bot.
 
 ---

@@ -300,3 +300,228 @@ def test_bot_format_status_message_pagination(monkeypatch):
     assert "status_page:2" in flattened_cb3
     assert "status_page:4" not in flattened_cb3
 
+
+class MockUser:
+    def __init__(self, user_id=12345, first_name="TestUser"):
+        self.id = user_id
+        self.first_name = first_name
+
+
+class MockMessage:
+    def __init__(self, text="", user_id=12345):
+        self.text = text
+        self.caption = None
+        self.from_user = MockUser(user_id=user_id)
+        self.replies = []
+        self.documents = []
+
+    async def reply_text(self, text, **kwargs):
+        self.replies.append({"text": text, "kwargs": kwargs})
+        return self
+
+    async def reply_document(self, document, **kwargs):
+        content = document.getvalue() if hasattr(document, "getvalue") else document.read()
+        name = getattr(document, "name", "file.txt")
+        self.documents.append({"name": name, "content": content, "kwargs": kwargs})
+        return self
+
+
+@pytest.mark.anyio
+async def test_cmd_exec_shell_true():
+    from bot.utils import cmd_exec
+    import sys
+
+    py_exe = sys.executable
+    cmd = f'"{py_exe}" -c "print(\'hello_from_test\')"'
+    stdout, stderr, code = await cmd_exec(cmd, shell=True)
+    assert "hello_from_test" in stdout
+    assert stderr == ""
+    assert code == 0
+
+
+@pytest.mark.anyio
+async def test_cmd_exec_shell_false():
+    from bot.utils import cmd_exec
+    import sys
+
+    py_exe = sys.executable
+    stdout, stderr, code = await cmd_exec([py_exe, "-c", "print('arg_test')"], shell=False)
+    assert "arg_test" in stdout
+    assert stderr == ""
+    assert code == 0
+
+
+@pytest.mark.anyio
+async def test_cmd_exec_error():
+    from bot.utils import cmd_exec
+    import sys
+
+    py_exe = sys.executable
+    cmd = f'"{py_exe}" -c "import sys; sys.stderr.write(\'err_msg\'); sys.exit(2)"'
+    stdout, stderr, code = await cmd_exec(cmd, shell=True)
+    assert "err_msg" in stderr
+    assert code == 2
+
+
+@pytest.mark.anyio
+async def test_new_task_decorator():
+    from bot.utils import new_task
+    import asyncio
+
+    @new_task
+    async def sample_coro(val):
+        await asyncio.sleep(0.01)
+        return val * 10
+
+    task = await sample_coro(5)
+    assert isinstance(task, asyncio.Task)
+    res = await task
+    assert res == 50
+
+
+@pytest.mark.anyio
+async def test_send_message_and_send_file():
+    from bot.utils import send_message, send_file
+    from io import BytesIO
+
+    msg = MockMessage("/shell")
+    await send_message(msg, "Test text")
+    assert len(msg.replies) == 1
+    assert msg.replies[0]["text"] == "Test text"
+
+    bio = BytesIO(b"file content")
+    bio.name = "output.txt"
+    await send_file(msg, bio)
+    assert len(msg.documents) == 1
+    assert msg.documents[0]["name"] == "output.txt"
+    assert msg.documents[0]["content"] == b"file content"
+
+
+@pytest.mark.anyio
+async def test_run_shell_unauthorized(monkeypatch):
+    from bot.command.shell import run_shell
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", "99999")
+    monkeypatch.setattr(settings, "OWNER_ID", "99999")
+
+    msg = MockMessage("/shell ls", user_id=11111)
+    task = await run_shell(None, msg)
+    await task
+
+    assert len(msg.replies) == 1
+    assert "Akses Ditolak" in msg.replies[0]["text"]
+
+
+@pytest.mark.anyio
+async def test_run_shell_no_command(monkeypatch):
+    from bot.command.shell import run_shell
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", None)
+    monkeypatch.setattr(settings, "OWNER_ID", None)
+
+    msg = MockMessage("/shell")
+    task = await run_shell(None, msg)
+    await task
+
+    assert len(msg.replies) == 1
+    assert msg.replies[0]["text"] == "No command to execute was given."
+
+
+@pytest.mark.anyio
+async def test_run_shell_stdout(monkeypatch):
+    from bot.command.shell import run_shell
+    from app.core.config import settings
+    from unittest.mock import patch
+
+    monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", None)
+    monkeypatch.setattr(settings, "OWNER_ID", None)
+
+    with patch("bot.command.shell.cmd_exec") as mock_exec:
+        mock_exec.return_value = ("total 0\n-rw-r--r-- file.txt", "", 0)
+        msg = MockMessage("/shell ls")
+        task = await run_shell(None, msg)
+        await task
+
+        assert len(msg.replies) == 1
+        reply = msg.replies[0]["text"]
+        assert "*Stdout*" in reply
+        assert "<code>total 0\n-rw-r--r-- file.txt</code>" in reply
+        assert "*Stderr*" not in reply
+
+
+@pytest.mark.anyio
+async def test_run_shell_stderr(monkeypatch):
+    from bot.command.shell import run_shell
+    from app.core.config import settings
+    from unittest.mock import patch
+
+    monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", None)
+    monkeypatch.setattr(settings, "OWNER_ID", None)
+
+    with patch("bot.command.shell.cmd_exec") as mock_exec:
+        mock_exec.return_value = ("", "command not found: unknown_cmd", 127)
+        msg = MockMessage("/shell unknown_cmd")
+        task = await run_shell(None, msg)
+        await task
+
+        assert len(msg.replies) == 1
+        reply = msg.replies[0]["text"]
+        assert "*Stderr*" in reply
+        assert "<code>command not found: unknown_cmd</code>" in reply
+        assert "*Stdout*" not in reply
+
+
+@pytest.mark.anyio
+async def test_run_shell_long_output(monkeypatch):
+    from bot.command.shell import run_shell
+    from app.core.config import settings
+    from unittest.mock import patch
+
+    monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", None)
+    monkeypatch.setattr(settings, "OWNER_ID", None)
+
+    with patch("bot.command.shell.cmd_exec") as mock_exec:
+        long_text = "x" * 3500
+        mock_exec.return_value = (long_text, "", 0)
+        msg = MockMessage("/shell cat huge_file.txt")
+        task = await run_shell(None, msg)
+        await task
+
+        assert len(msg.replies) == 0
+        assert len(msg.documents) == 1
+        doc = msg.documents[0]
+        assert doc["name"] == "shell_output.txt"
+        assert len(doc["content"]) > 3000
+
+
+@pytest.mark.anyio
+async def test_run_shell_no_reply(monkeypatch):
+    from bot.command.shell import run_shell
+    from app.core.config import settings
+    from unittest.mock import patch
+
+    monkeypatch.setattr(settings, "TELEGRAM_AUTHORIZED_USERS", None)
+    monkeypatch.setattr(settings, "OWNER_ID", None)
+
+    with patch("bot.command.shell.cmd_exec") as mock_exec:
+        mock_exec.return_value = ("", "", 0)
+        msg = MockMessage("/shell touch dummy.txt")
+        task = await run_shell(None, msg)
+        await task
+
+        assert len(msg.replies) == 1
+        assert msg.replies[0]["text"] == "No Reply"
+
+
+def test_helper_compatibility_imports():
+    from bot.helper.ext_utils.bot_utils import cmd_exec, new_task, bot_loop
+    from bot.helper.telegram_helper.message_utils import send_message, send_file
+
+    assert callable(cmd_exec)
+    assert callable(new_task)
+    assert callable(send_message)
+    assert callable(send_file)
+
+
