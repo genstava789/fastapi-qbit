@@ -173,3 +173,62 @@ async def test_gdrive_list_files_includes_hierarchy_metadata(monkeypatch):
         assert path_resp.json() == [{"id": "sub_dl", "name": "Download"}]
 
 
+@pytest.mark.anyio
+async def test_gdrive_download_to_server():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Empty items validation
+        empty_resp = await client.post(
+            "/api/v1/drive/download-to-server",
+            json={"items": []},
+        )
+        assert empty_resp.status_code == 422
+
+        # Start download task
+        start_resp = await client.post(
+            "/api/v1/drive/download-to-server",
+            json={
+                "items": [
+                    {
+                        "file_id": "test_gdrive_file_id",
+                        "name": "Test.Episode.S01E01.mkv",
+                        "size": 1048576,
+                        "mime_type": "video/x-matroska",
+                    }
+                ],
+                "destination_path": "/tmp/test-downloads",
+                "auto_attach_reseed": True,
+            },
+        )
+        assert start_resp.status_code == 200
+        data = start_resp.json()
+        assert data["success"] is True
+        assert len(data["task_ids"]) == 1
+        task_id = data["task_ids"][0]
+
+        # List downloads
+        list_resp = await client.get("/api/v1/drive/downloads-to-server")
+        assert list_resp.status_code == 200
+        items = list_resp.json()
+        assert any(item["task_id"] == task_id for item in items)
+
+        # Get task progress
+        prog_resp = await client.get(f"/api/v1/drive/downloads-to-server/{task_id}/progress")
+        assert prog_resp.status_code == 200
+        task_data = prog_resp.json()
+        assert task_data["task_id"] == task_id
+        assert task_data["filename"] == "Test.Episode.S01E01.mkv"
+        assert task_data["auto_attach_reseed"] is True
+
+        # Cancel / remove task
+        cancel_resp = await client.delete(f"/api/v1/drive/downloads-to-server/{task_id}")
+        assert cancel_resp.status_code == 200
+        assert cancel_resp.json()["success"] is True
+
+        # Clear completed
+        clear_resp = await client.delete("/api/v1/drive/downloads-to-server/completed")
+        assert clear_resp.status_code == 200
+        assert "cleared_count" in clear_resp.json()
+
+
+

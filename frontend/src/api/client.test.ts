@@ -189,5 +189,50 @@ describe("DriveApi client", () => {
     });
     expect(batchRes.deleted).toEqual(["f1", "f2"]);
   });
+
+  it("handles downloading from drive to server endpoints", async () => {
+    mockClient.post.mockResolvedValueOnce({
+      data: { success: true, task_ids: ["t1", "t2"], message: "Started" },
+    });
+    const items = [
+      { file_id: "fid1", name: "test1.mkv", size: 100 },
+      { file_id: "fid2", name: "test2.mkv", size: 200 },
+    ];
+    const startRes = await driveApi.startDownloadToServer(items, "/downloads", true);
+    expect(mockClient.post).toHaveBeenCalledWith("/drive/download-to-server", {
+      items,
+      destination_path: "/downloads",
+      auto_attach_reseed: true,
+    });
+    expect(startRes.task_ids).toEqual(["t1", "t2"]);
+
+    mockClient.get.mockResolvedValueOnce({
+      data: [
+        {
+          task_id: "t1",
+          filename: "test1.mkv",
+          status: "downloading",
+          progress_percent: 50.0,
+        },
+      ],
+    });
+    const listRes = await driveApi.listDownloadsToServer();
+    expect(mockClient.get).toHaveBeenCalledWith("/drive/downloads-to-server");
+    expect(listRes).toHaveLength(1);
+
+    mockClient.delete.mockResolvedValueOnce({
+      data: { success: true, cleared_count: 1 },
+    });
+    const clearRes = await driveApi.clearCompletedDownloadsToServer();
+    expect(mockClient.delete).toHaveBeenCalledWith("/drive/downloads-to-server/completed");
+    expect(clearRes.cleared_count).toBe(1);
+
+    mockClient.delete.mockResolvedValueOnce({
+      data: { success: true, task_id: "t1" },
+    });
+    const cancelRes = await driveApi.cancelDownloadToServer("t1");
+    expect(mockClient.delete).toHaveBeenCalledWith("/drive/downloads-to-server/t1");
+    expect(cancelRes.success).toBe(true);
+  });
 });
 

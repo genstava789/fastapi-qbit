@@ -182,6 +182,30 @@ export interface DriveUploadProgress {
   file_path?: string;
 }
 
+export interface DriveDownloadProgress {
+  task_id: string;
+  file_id: string;
+  filename: string;
+  progress_percent: number;
+  status: "pending" | "downloading" | "completed" | "failed" | string;
+  bytes_downloaded: number;
+  total_bytes: number;
+  speed_bytes_sec: number;
+  destination_path: string;
+  is_directory: boolean;
+  auto_attach_reseed?: boolean;
+  error?: string | null;
+  created_at: number;
+  completed_at?: number | null;
+}
+
+export interface DriveDownloadToServerItem {
+  file_id: string;
+  name: string;
+  size?: number | null;
+  mime_type?: string | null;
+}
+
 export interface DriveBreadcrumb {
   id: string;
   name: string;

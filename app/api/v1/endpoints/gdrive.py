@@ -12,6 +12,8 @@ from app.schemas.gdrive import (
     DriveCreateFolderRequest,
     DriveDefaultPathRequest,
     DriveDefaultPathResponse,
+    DriveDownloadProgress,
+    DriveDownloadToServerRequest,
     DriveFileItem,
     DriveListResponse,
     DriveRenameFileRequest,
@@ -398,6 +400,89 @@ def list_uploads():
 def clear_completed_uploads():
     cleared = gdrive_service.clear_completed_uploads()
     return {"success": True, "cleared_count": cleared}
+
+
+# ── Downloads to Local Server (Pull from Drive to VPS) ───────────────────
+
+
+@router.post(
+    "/download-to-server",
+    summary="Download to Server",
+    description="Start background download/pull of Google Drive files or folders to local server storage.",
+)
+def download_to_server(payload: DriveDownloadToServerRequest):
+    if not payload.items:
+        raise HTTPException(
+            status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
+            detail="At least one item must be provided to download.",
+        )
+    try:
+        task_ids = gdrive_service.start_download_to_server(
+            items=[item.model_dump() for item in payload.items],
+            destination_path=payload.destination_path,
+            auto_attach_reseed=payload.auto_attach_reseed,
+        )
+        return {
+            "success": True,
+            "task_ids": task_ids,
+            "message": f"Started downloading {len(task_ids)} item(s) to server.",
+        }
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start download to server: {str(e)}",
+        )
+
+
+@router.get(
+    "/downloads-to-server",
+    response_model=List[DriveDownloadProgress],
+    summary="List Downloads to Server",
+    description="List all active and completed downloads to server with their progress.",
+)
+def list_downloads_to_server():
+    return gdrive_service.get_all_downloads()
+
+
+@router.get(
+    "/downloads-to-server/{task_id}/progress",
+    response_model=DriveDownloadProgress,
+    summary="Get Download to Server Progress",
+    description="Get the progress of a specific download to server by task_id.",
+)
+def get_download_to_server_progress(task_id: str):
+    progress = gdrive_service.get_download_progress(task_id)
+    if not progress:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Download task with id '{task_id}' not found.",
+        )
+    return progress
+
+
+@router.delete(
+    "/downloads-to-server/completed",
+    summary="Clear Completed Downloads to Server",
+    description="Remove completed and failed downloads from the tracking list.",
+)
+def clear_completed_downloads_to_server():
+    cleared = gdrive_service.clear_completed_downloads()
+    return {"success": True, "cleared_count": cleared}
+
+
+@router.delete(
+    "/downloads-to-server/{task_id}",
+    summary="Cancel Download to Server",
+    description="Cancel or remove a download task by task_id.",
+)
+def cancel_download_to_server(task_id: str):
+    cancelled = gdrive_service.cancel_download(task_id)
+    return {"success": cancelled, "task_id": task_id}
 
 
 # ── Download ─────────────────────────────────────────────────────────────

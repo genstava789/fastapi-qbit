@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DriveApi } from "@/api/client";
 import { useActiveInstance } from "@/hooks/useTorrents";
 import { useAppStore } from "@/stores/appStore";
-import type { DriveFileItem } from "@/types";
+import type { DriveFileItem, DriveDownloadToServerItem } from "@/types";
 import toast from "react-hot-toast";
 
 export function useDriveApi() {
@@ -299,3 +299,80 @@ export function useDriveDefaultPath() {
 
   return { query, mutation };
 }
+
+export function useDriveDownloads() {
+  const api = useDriveApi();
+  const instance = useActiveInstance();
+  return useQuery({
+    queryKey: ["drive-downloads", instance?.id],
+    queryFn: () => api!.listDownloadsToServer(),
+    enabled: !!api,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const hasActive = data?.some(
+        (d) => d.status === "downloading" || d.status === "pending"
+      );
+      return hasActive ? 1500 : data && data.length > 0 ? 3000 : false;
+    },
+  });
+}
+
+export function useClearCompletedDownloads() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: () => api!.clearCompletedDownloadsToServer(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["drive-downloads", instance?.id] });
+    },
+  });
+}
+
+export function useDownloadToServer() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: ({
+      items,
+      destinationPath,
+      autoAttachReseed,
+    }: {
+      items: DriveDownloadToServerItem[];
+      destinationPath?: string;
+      autoAttachReseed?: boolean;
+    }) => api!.startDownloadToServer(items, destinationPath, autoAttachReseed),
+    onSuccess: (data, variables) => {
+      const count = variables.items.length;
+      toast.success(
+        count > 1
+          ? `Started pulling ${count} items to local server!`
+          : `Started pulling '${variables.items[0]?.name || "file"}' to server!`
+      );
+      qc.invalidateQueries({ queryKey: ["drive-downloads", instance?.id] });
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Pull to server failed: ${msg}`);
+    },
+  });
+}
+
+export function useCancelDownloadToServer() {
+  const api = useDriveApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: (taskId: string) => api!.cancelDownloadToServer(taskId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["drive-downloads", instance?.id] });
+      toast.success("Download task cancelled");
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Failed to cancel task: ${msg}`);
+    },
+  });
+}
+

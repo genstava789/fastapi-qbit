@@ -138,4 +138,13 @@ describe("useAppStore", () => {
     expect(completed["archlinux.iso"]).toBeDefined();
     expect(completed["archlinux.iso"]?.drive_file_id).toBe("drive-file-123");
   });
+
+  it("manages driveDefaultLocalPath configuration", () => {
+    const store = useAppStore.getState();
+    expect(store.driveDefaultLocalPath).toBeNull();
+    store.setDriveDefaultLocalPath("/downloads/anime");
+    expect(useAppStore.getState().driveDefaultLocalPath).toBe("/downloads/anime");
+    store.setDriveDefaultLocalPath(null);
+    expect(useAppStore.getState().driveDefaultLocalPath).toBeNull();
+  });
 });

@@ -14,13 +14,14 @@ import {
   RefreshCw,
   X,
   UploadCloud,
+  HardDriveDownload,
 } from "lucide-react";
 import { ListSkeleton, Skeleton } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
-import { useDriveAuthStatus } from "@/hooks/useDrive";
-import { DriveAuthModal, UploadToDriveModal } from "@/components/drive";
+import { useDriveAuthStatus, useDriveDownloads } from "@/hooks/useDrive";
+import { DriveAuthModal, UploadToDriveModal, ActiveDriveDownloads } from "@/components/drive";
 import toast from "react-hot-toast";
-import type { TorrentItem } from "@/types";
+import type { TorrentItem, DriveDownloadProgress } from "@/types";
 
 interface FolderNode {
   name: string;
@@ -29,9 +30,13 @@ interface FolderNode {
   size: number;
   children: FolderNode[];
   torrents: TorrentItem[];
+  activeDownloads?: DriveDownloadProgress[];
 }
 
-function buildFileTree(torrents: TorrentItem[]): FolderNode {
+function buildFileTree(
+  torrents: TorrentItem[],
+  activeDownloads?: DriveDownloadProgress[]
+): FolderNode {
   const root: FolderNode = {
     name: "/",
     path: "/",
@@ -39,10 +44,11 @@ function buildFileTree(torrents: TorrentItem[]): FolderNode {
     size: 0,
     children: [],
     torrents: [],
+    activeDownloads: [],
   };
 
-  for (const t of torrents) {
-    const parts = t.save_path.split("/").filter(Boolean);
+  const getOrCreatePathNode = (rawPath: string) => {
+    const parts = rawPath.replace(/\\/g, "/").split("/").filter(Boolean);
     let current = root;
     let currentPath = "";
 
@@ -57,13 +63,37 @@ function buildFileTree(torrents: TorrentItem[]): FolderNode {
           size: 0,
           children: [],
           torrents: [],
+          activeDownloads: [],
         };
         current.children.push(child);
       }
-      child.size += t.total_size;
       current = child;
     }
-    current.torrents.push(t);
+    return current;
+  };
+
+  for (const t of torrents) {
+    const targetNode = getOrCreatePathNode(t.save_path);
+    targetNode.torrents.push(t);
+
+    const parts = t.save_path.replace(/\\/g, "/").split("/").filter(Boolean);
+    let current = root;
+    for (const part of parts) {
+      const child = current.children.find((c) => c.name === part);
+      if (child) {
+        child.size += t.total_size;
+        current = child;
+      }
+    }
+  }
+
+  // Inject active downloads into their target destination folder
+  if (activeDownloads && activeDownloads.length > 0) {
+    for (const d of activeDownloads) {
+      const targetFolder = getOrCreatePathNode(d.destination_path || "/downloads");
+      if (!targetFolder.activeDownloads) targetFolder.activeDownloads = [];
+      targetFolder.activeDownloads.push(d);
+    }
   }
 
   return root;
@@ -92,7 +122,9 @@ function FolderItem({
   const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
 
   const hasCompleted =
-    node.torrents.some((t) => t.progress >= 100) || node.children.length > 0;
+    node.torrents.some((t) => t.progress >= 100) ||
+    node.children.length > 0 ||
+    (node.activeDownloads && node.activeDownloads.length > 0);
 
   return (
     <div>
@@ -105,7 +137,9 @@ function FolderItem({
           onClick={() => setExpanded(!expanded)}
           className="flex items-center gap-2 flex-1 min-w-0 min-h-[44px] py-2 text-left"
         >
-          {node.children.length > 0 || node.torrents.length > 0 ? (
+          {node.children.length > 0 ||
+          node.torrents.length > 0 ||
+          (node.activeDownloads && node.activeDownloads.length > 0) ? (
             expanded ? (
               <ChevronDown className="w-4 h-4 text-text-muted flex-shrink-0" />
             ) : (
@@ -150,6 +184,38 @@ function FolderItem({
               depth={depth + 1}
               onOpenActionMenu={onOpenActionMenu}
             />
+          ))}
+
+          {/* Active downloads placeholder pulling from Drive to VPS */}
+          {node.activeDownloads?.map((d) => (
+            <div
+              key={d.task_id}
+              className="flex items-center gap-2 pr-1 min-h-[48px] py-2 bg-sky-500/[0.04] hover:bg-sky-500/[0.08] border-l-2 border-l-sky-400 rounded-xl transition-colors my-0.5"
+              style={{ paddingLeft: `${Math.min(depth + 1, 4) * 14 + 8}px` }}
+            >
+              <span className="w-4 flex-shrink-0" />
+              <HardDriveDownload className="w-4 h-4 text-sky-400 flex-shrink-0 animate-bounce" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-text-primary truncate font-medium">
+                  {d.filename}
+                </p>
+                <p className="text-xs text-text-muted font-mono">
+                  {d.total_bytes > 0 ? formatBytes(d.total_bytes) : "Unknown size"} ·{" "}
+                  <span className="text-sky-400 font-semibold">
+                    {d.progress_percent.toFixed(1)}%
+                  </span>
+                  <span className="text-[11px] text-text-muted ml-1.5">
+                    (Pulling from Drive{d.speed_bytes_sec > 0 ? ` • ${formatBytes(d.speed_bytes_sec)}/s` : ""})
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-shrink-0 pr-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-sky-500/15 text-sky-400 border border-sky-500/20 animate-pulse">
+                  {d.progress_percent >= 100 ? "100.0%" : `${d.progress_percent.toFixed(1)}%`}
+                </span>
+              </div>
+            </div>
           ))}
           {node.torrents.map((t) => (
             <div
@@ -230,6 +296,13 @@ function FolderItem({
 
 export function FileBrowserPage() {
   const { data: torrents, isLoading } = useTorrents();
+  const { data: driveDownloads } = useDriveDownloads();
+  const activeDownloads = useMemo(() => {
+    return driveDownloads?.filter(
+      (d) => d.status === "downloading" || d.status === "pending"
+    );
+  }, [driveDownloads]);
+
   const searchQuery = useAppStore((s) => s.searchQuery);
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
   const openAddTorrentWithPrefill = useAppStore(
@@ -254,17 +327,22 @@ export function FileBrowserPage() {
   };
 
   const filteredTree = useMemo(() => {
-    if (!torrents) return null;
+    if (!torrents && (!activeDownloads || activeDownloads.length === 0)) return null;
     const q = searchQuery.toLowerCase();
-    const filtered = searchQuery
-      ? torrents.filter(
-          (t) =>
-            t.name.toLowerCase().includes(q) ||
-            t.save_path.toLowerCase().includes(q)
-        )
-      : torrents;
-    return buildFileTree(filtered);
-  }, [searchQuery, torrents]);
+    const filteredTorrents = (torrents || []).filter(
+      (t) =>
+        !q ||
+        t.name.toLowerCase().includes(q) ||
+        t.save_path.toLowerCase().includes(q)
+    );
+    const filteredDownloads = (activeDownloads || []).filter(
+      (d) =>
+        !q ||
+        d.filename.toLowerCase().includes(q) ||
+        d.destination_path.toLowerCase().includes(q)
+    );
+    return buildFileTree(filteredTorrents, filteredDownloads);
+  }, [searchQuery, torrents, activeDownloads]);
 
   const copyPath = (path: string) => {
     navigator.clipboard.writeText(path);
@@ -279,6 +357,9 @@ export function FileBrowserPage() {
           Browse downloaded files and trigger Re-Seed directly from VPS paths
         </p>
       </div>
+
+      {/* Active Background Downloads to VPS Card */}
+      <ActiveDriveDownloads />
 
       {/* Search (Synced with Header contextual search) */}
       <div className="relative max-w-md">
@@ -313,7 +394,8 @@ export function FileBrowserPage() {
       ) : filteredTree ? (
         <div className="glass rounded-xl p-2">
           {filteredTree.children.length > 0 ||
-          filteredTree.torrents.length > 0 ? (
+          filteredTree.torrents.length > 0 ||
+          (filteredTree.activeDownloads && filteredTree.activeDownloads.length > 0) ? (
             filteredTree.children.map((child) => (
               <FolderItem
                 key={child.path}

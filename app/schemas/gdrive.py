@@ -87,3 +87,34 @@ class DriveDefaultPathRequest(BaseModel):
 class DriveDefaultPathResponse(BaseModel):
     folder_id: Optional[str] = None
     folder_name: Optional[str] = None
+
+
+class DriveDownloadToServerItem(BaseModel):
+    file_id: str = Field(..., description="Google Drive file or folder ID to download.")
+    name: str = Field(..., description="File or folder name.")
+    size: Optional[int] = Field(default=None, description="Size in bytes if known.")
+    mime_type: Optional[str] = Field(default=None, description="MIME type if known.")
+
+
+class DriveDownloadToServerRequest(BaseModel):
+    items: List[DriveDownloadToServerItem] = Field(..., description="List of items to download/pull to VPS storage.")
+    destination_path: Optional[str] = Field(default=None, description="Local VPS directory path to save into.")
+    auto_attach_reseed: bool = Field(default=False, description="Whether to mark or link for re-seeding.")
+
+
+class DriveDownloadProgress(BaseModel):
+    task_id: str
+    file_id: str
+    filename: str
+    progress_percent: float
+    status: str  # pending, downloading, completed, failed
+    bytes_downloaded: int
+    total_bytes: int
+    speed_bytes_sec: float = 0.0
+    destination_path: str
+    is_directory: bool = False
+    auto_attach_reseed: bool = False
+    error: Optional[str] = None
+    created_at: float
+    completed_at: Optional[float] = None
+

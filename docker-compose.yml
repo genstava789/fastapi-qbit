@@ -50,7 +50,7 @@ services:
       - OAUTHLIB_RELAX_TOKEN_SCOPE=1
       - PROWLARR_URL=http://prowlarr:9696
     volumes:
-      - ./downloads:/downloads:ro
+      - ./downloads:/downloads
       - ./credentials.json:/app/credentials.json:ro
       - ./token.json:/app/token.json
       - ./gdrive_settings.json:/app/gdrive_settings.json

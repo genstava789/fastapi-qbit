@@ -59,6 +59,8 @@ interface AppState {
   driveDefaultFolderId: string | null;
   driveDefaultFolderName: string | null;
   setDriveDefaultFolder: (id: string | null, name: string | null) => void;
+  driveDefaultLocalPath: string | null;
+  setDriveDefaultLocalPath: (path: string | null) => void;
 
   // Reseed ratio tracking
   reseedRatios: Record<string, number>;
@@ -158,6 +160,9 @@ export const useAppStore = create<AppState>()(
       driveDefaultFolderName: null,
       setDriveDefaultFolder: (id, name) =>
         set({ driveDefaultFolderId: id, driveDefaultFolderName: name }),
+      driveDefaultLocalPath: null,
+      setDriveDefaultLocalPath: (path) =>
+        set({ driveDefaultLocalPath: path }),
 
       // Reseed ratio tracking
       reseedRatios: {},
@@ -208,6 +213,7 @@ export const useAppStore = create<AppState>()(
         sidebarOpen: state.sidebarOpen,
         driveDefaultFolderId: state.driveDefaultFolderId,
         driveDefaultFolderName: state.driveDefaultFolderName,
+        driveDefaultLocalPath: state.driveDefaultLocalPath,
         reseedRatios: state.reseedRatios,
         completedDriveUploads: state.completedDriveUploads,
       }),

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -39,9 +40,28 @@ class UploadState:
     torrent_hash: Optional[str] = None
 
 
+@dataclass
+class DownloadState:
+    task_id: str
+    file_id: str
+    filename: str
+    destination_path: str
+    status: str = "pending"  # pending, downloading, completed, failed
+    progress_percent: float = 0.0
+    bytes_downloaded: int = 0
+    total_bytes: int = 0
+    speed_bytes_sec: float = 0.0
+    is_directory: bool = False
+    auto_attach_reseed: bool = False
+    error: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    completed_at: Optional[float] = None
+
+
 class GDriveService:
     def __init__(self) -> None:
         self._uploads: Dict[str, UploadState] = {}
+        self._downloads: Dict[str, DownloadState] = {}
         self._root_folder_id: Optional[str] = None
 
     def _get_root_folder_id(self, service: Any) -> Optional[str]:
@@ -534,6 +554,294 @@ class GDriveService:
         for uid in to_delete:
             del self._uploads[uid]
         return len(to_delete)
+
+    # ── Downloads to Server (Pull from Drive to VPS) ──────────────────────
+
+    def start_download_to_server(
+        self,
+        items: List[Dict[str, Any]],
+        destination_path: Optional[str] = None,
+        auto_attach_reseed: bool = False,
+    ) -> List[str]:
+        """Start background download/pull of Google Drive files/folders to local server."""
+        from app.core.config import settings
+
+        target_dir = (
+            destination_path.strip()
+            if destination_path and destination_path.strip()
+            else getattr(settings, "DEFAULT_SAVE_PATH", "/downloads")
+        )
+        target_dir = os.path.abspath(target_dir)
+        os.makedirs(target_dir, exist_ok=True)
+
+        task_ids: List[str] = []
+        for item in items:
+            task_id = str(uuid.uuid4())
+            file_id = item.get("file_id") or ""
+            name = item.get("name") or "download"
+            size = item.get("size")
+            mime_type = item.get("mime_type") or ""
+            is_dir = mime_type == "application/vnd.google-apps.folder"
+
+            state = DownloadState(
+                task_id=task_id,
+                file_id=file_id,
+                filename=name,
+                destination_path=target_dir,
+                status="pending",
+                total_bytes=size or 0,
+                is_directory=is_dir,
+                auto_attach_reseed=auto_attach_reseed,
+            )
+            self._downloads[task_id] = state
+            task_ids.append(task_id)
+
+            thread = threading.Thread(
+                target=self._download_worker,
+                args=(task_id,),
+                daemon=True,
+            )
+            thread.start()
+
+        return task_ids
+
+    def _download_single_file(
+        self,
+        file_id: str,
+        target_path: str,
+        state: DownloadState,
+        base_downloaded: int = 0,
+    ) -> int:
+        """Stream a single file from Google Drive into target_path with speed tracking."""
+        resp = self.open_download_stream(file_id)
+        if resp.status_code >= 400:
+            error_body = resp.text
+            raise RuntimeError(
+                f"Google Drive streaming error ({resp.status_code}): {error_body[:200]}"
+            )
+
+        file_size = 0
+        if "Content-Length" in resp.headers:
+            try:
+                file_size = int(resp.headers["Content-Length"])
+            except ValueError:
+                pass
+
+        if not state.total_bytes and file_size > 0:
+            state.total_bytes = file_size
+
+        part_path = target_path + ".part"
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+        chunk_size = 1024 * 1024  # 1 MB
+        last_time = time.time()
+        last_bytes = state.bytes_downloaded
+        downloaded_in_file = 0
+
+        with open(part_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    downloaded_in_file += len(chunk)
+                    state.bytes_downloaded = base_downloaded + downloaded_in_file
+                    now = time.time()
+                    dt = now - last_time
+                    if dt >= 0.4:
+                        instant_speed = (state.bytes_downloaded - last_bytes) / dt
+                        state.speed_bytes_sec = (
+                            0.7 * state.speed_bytes_sec + 0.3 * instant_speed
+                            if state.speed_bytes_sec > 0
+                            else instant_speed
+                        )
+                        last_time = now
+                        last_bytes = state.bytes_downloaded
+
+                    if state.total_bytes > 0:
+                        state.progress_percent = round(
+                            min(99.9, (state.bytes_downloaded / state.total_bytes) * 100), 1
+                        )
+
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except OSError:
+                pass
+        os.rename(part_path, target_path)
+        return downloaded_in_file
+
+    def _download_directory_recursive(
+        self,
+        service: Any,
+        folder_id: str,
+        parent_dir: str,
+        folder_name: str,
+        state: DownloadState,
+    ) -> None:
+        """Recursively scan and download a Google Drive folder hierarchy to local disk."""
+        local_folder = os.path.join(parent_dir, folder_name)
+        os.makedirs(local_folder, exist_ok=True)
+
+        def scan_items(fid: str) -> List[Dict[str, Any]]:
+            items: List[Dict[str, Any]] = []
+            page_token = None
+            while True:
+                q = f"'{fid}' in parents and trashed = false"
+                res = service.files().list(
+                    q=q,
+                    fields="nextPageToken, files(id, name, mimeType, size)",
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                ).execute()
+                items.extend(res.get("files", []))
+                page_token = res.get("nextPageToken")
+                if not page_token:
+                    break
+            return items
+
+        def download_contents(fid: str, current_dir: str):
+            children = scan_items(fid)
+            for child in children:
+                c_name = child.get("name", "unnamed")
+                c_id = child["id"]
+                c_mime = child.get("mimeType", "")
+                if c_mime == "application/vnd.google-apps.folder":
+                    sub_dir = os.path.join(current_dir, c_name)
+                    os.makedirs(sub_dir, exist_ok=True)
+                    download_contents(c_id, sub_dir)
+                else:
+                    c_path = os.path.join(current_dir, c_name)
+                    self._download_single_file(
+                        c_id, c_path, state, base_downloaded=state.bytes_downloaded
+                    )
+
+        if state.total_bytes == 0:
+            def calc_total_size(fid: str) -> int:
+                total = 0
+                for c in scan_items(fid):
+                    if c.get("mimeType") == "application/vnd.google-apps.folder":
+                        total += calc_total_size(c["id"])
+                    else:
+                        total += int(c.get("size") or 0)
+                return total
+
+            try:
+                state.total_bytes = calc_total_size(folder_id)
+            except Exception as e:
+                logger.debug(f"Failed to calculate folder total size: {e}")
+
+        download_contents(folder_id, local_folder)
+
+    def _download_worker(self, task_id: str) -> None:
+        """Background thread worker for downloading Drive files/folders to local server."""
+        state = self._downloads.get(task_id)
+        if not state:
+            return
+
+        try:
+            state.status = "downloading"
+            service = self._build_service()
+
+            try:
+                meta = service.files().get(
+                    fileId=state.file_id,
+                    fields="id, name, mimeType, size",
+                    supportsAllDrives=True,
+                ).execute()
+                if meta:
+                    if meta.get("mimeType") == "application/vnd.google-apps.folder":
+                        state.is_directory = True
+                    if meta.get("size") and not state.total_bytes:
+                        state.total_bytes = int(meta["size"])
+                    if meta.get("name") and not state.filename:
+                        state.filename = meta["name"]
+            except Exception as meta_err:
+                logger.debug(f"Could not refresh metadata for {state.file_id}: {meta_err}")
+
+            if state.is_directory:
+                self._download_directory_recursive(
+                    service, state.file_id, state.destination_path, state.filename, state
+                )
+            else:
+                target_path = os.path.join(state.destination_path, state.filename)
+                self._download_single_file(state.file_id, target_path, state)
+
+            state.progress_percent = 100.0
+            if state.total_bytes > 0:
+                state.bytes_downloaded = state.total_bytes
+            state.speed_bytes_sec = 0.0
+            state.status = "completed"
+            state.completed_at = time.time()
+            logger.info(f"Download to server completed: {state.filename} (task_id={task_id})")
+        except Exception as e:
+            state.status = "failed"
+            state.error = str(e)
+            state.speed_bytes_sec = 0.0
+            logger.error(f"Download to server failed for {state.filename}: {e}", exc_info=True)
+
+    def get_download_progress(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Return download progress for a given task_id."""
+        state = self._downloads.get(task_id)
+        if not state:
+            return None
+        return {
+            "task_id": state.task_id,
+            "file_id": state.file_id,
+            "filename": state.filename,
+            "progress_percent": state.progress_percent,
+            "status": state.status,
+            "bytes_downloaded": state.bytes_downloaded,
+            "total_bytes": state.total_bytes,
+            "speed_bytes_sec": state.speed_bytes_sec,
+            "destination_path": state.destination_path,
+            "is_directory": state.is_directory,
+            "auto_attach_reseed": state.auto_attach_reseed,
+            "error": state.error,
+            "created_at": state.created_at,
+            "completed_at": state.completed_at,
+        }
+
+    def get_all_downloads(self) -> List[Dict[str, Any]]:
+        """Return progress for all tracked downloads to server."""
+        return [
+            {
+                "task_id": s.task_id,
+                "file_id": s.file_id,
+                "filename": s.filename,
+                "progress_percent": s.progress_percent,
+                "status": s.status,
+                "bytes_downloaded": s.bytes_downloaded,
+                "total_bytes": s.total_bytes,
+                "speed_bytes_sec": s.speed_bytes_sec,
+                "destination_path": s.destination_path,
+                "is_directory": s.is_directory,
+                "auto_attach_reseed": s.auto_attach_reseed,
+                "error": s.error,
+                "created_at": s.created_at,
+                "completed_at": s.completed_at,
+            }
+            for s in self._downloads.values()
+        ]
+
+    def clear_completed_downloads(self) -> int:
+        """Removes completed or failed downloads from in-memory tracking."""
+        to_delete = [
+            tid for tid, s in self._downloads.items()
+            if s.status in ("completed", "failed")
+        ]
+        for tid in to_delete:
+            del self._downloads[tid]
+        return len(to_delete)
+
+    def cancel_download(self, task_id: str) -> bool:
+        """Cancel or remove a download task."""
+        if task_id in self._downloads:
+            self._downloads[task_id].status = "failed"
+            self._downloads[task_id].error = "Cancelled by user"
+            del self._downloads[task_id]
+            return True
+        return False
+
 
     def _build_folder_path(
         self, service: Any, folder_id: str, root_id: Optional[str] = None

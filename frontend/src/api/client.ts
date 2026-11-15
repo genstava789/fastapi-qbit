@@ -12,6 +12,8 @@ import type {
   DriveListResponse,
   DriveStorageQuota,
   DriveUploadProgress,
+  DriveDownloadProgress,
+  DriveDownloadToServerItem,
   ProwlarrAddPayload,
   ProwlarrConfigPayload,
   ProwlarrConfigResponse,
@@ -275,6 +277,51 @@ export class DriveApi {
   async clearCompletedUploads(): Promise<{ success: boolean; cleared_count: number }> {
     const { data } = await this.client.delete<{ success: boolean; cleared_count: number }>(
       "/drive/uploads/completed"
+    );
+    return data;
+  }
+
+  async startDownloadToServer(
+    items: DriveDownloadToServerItem[],
+    destinationPath?: string,
+    autoAttachReseed?: boolean
+  ): Promise<{ success: boolean; task_ids: string[]; message: string }> {
+    const { data } = await this.client.post<{
+      success: boolean;
+      task_ids: string[];
+      message: string;
+    }>("/drive/download-to-server", {
+      items,
+      destination_path: destinationPath,
+      auto_attach_reseed: !!autoAttachReseed,
+    });
+    return data;
+  }
+
+  async listDownloadsToServer(): Promise<DriveDownloadProgress[]> {
+    const { data } = await this.client.get<DriveDownloadProgress[]>(
+      "/drive/downloads-to-server"
+    );
+    return data;
+  }
+
+  async getDownloadToServerProgress(taskId: string): Promise<DriveDownloadProgress> {
+    const { data } = await this.client.get<DriveDownloadProgress>(
+      `/drive/downloads-to-server/${taskId}/progress`
+    );
+    return data;
+  }
+
+  async clearCompletedDownloadsToServer(): Promise<{ success: boolean; cleared_count: number }> {
+    const { data } = await this.client.delete<{ success: boolean; cleared_count: number }>(
+      "/drive/downloads-to-server/completed"
+    );
+    return data;
+  }
+
+  async cancelDownloadToServer(taskId: string): Promise<{ success: boolean; task_id: string }> {
+    const { data } = await this.client.delete<{ success: boolean; task_id: string }>(
+      `/drive/downloads-to-server/${taskId}`
     );
     return data;
   }

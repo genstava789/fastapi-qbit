@@ -15,9 +15,15 @@ import { useActiveInstance } from "@/hooks/useTorrents";
 import { formatBytes, formatCompactDate, cn } from "@/lib/utils";
 import { UI_STRINGS } from "@/lib/strings";
 import { ListSkeleton, Skeleton } from "@/components/ui";
-import { DriveAuthModal, UploadToDriveModal } from "@/components/drive";
+import {
+  DriveAuthModal,
+  UploadToDriveModal,
+  CopyToLocalServerModal,
+  ActiveDriveDownloads,
+} from "@/components/drive";
 import {
   HardDrive,
+  HardDriveDownload,
   FolderOpen,
   FolderPlus,
   File,
@@ -135,6 +141,7 @@ export function DrivePage() {
 
   // Action Sheet & Dialogs state
   const [actionSheetItem, setActionSheetItem] = useState<DriveFileItem | null>(null);
+  const [copyToServerItems, setCopyToServerItems] = useState<DriveFileItem[]>([]);
   const [itemToRename, setItemToRename] = useState<DriveFileItem | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [itemToDelete, setItemToDelete] = useState<DriveFileItem | null>(null);
@@ -467,6 +474,9 @@ export function DrivePage() {
 
   return (
     <div className="space-y-3">
+      {/* ── Active Background Downloads to Local Server ── */}
+      <ActiveDriveDownloads />
+
       {/* ── Tier 1: Page Header Row (No 'Connected' badge, distinct FolderPlus icon) ── */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -646,14 +656,30 @@ export function DrivePage() {
 
               <div className="flex items-center gap-1.5 ml-auto">
                 {selectedIds.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setBatchDeleteConfirmOpen(true)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-danger text-white text-[11px] font-medium shadow-sm hover:bg-danger/90 transition-colors"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    <span>{S.deleteSelected} ({selectedIds.size})</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selectedItems = filteredItems.all.filter((item) =>
+                          selectedIds.has(item.id)
+                        );
+                        setCopyToServerItems(selectedItems);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-[11px] font-medium shadow-sm transition-colors"
+                      title="Copy selected items to local VPS server"
+                    >
+                      <HardDriveDownload className="w-3 h-3" />
+                      <span>Copy to Server ({selectedIds.size})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBatchDeleteConfirmOpen(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-danger text-white text-[11px] font-medium shadow-sm hover:bg-danger/90 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>{S.deleteSelected} ({selectedIds.size})</span>
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"
@@ -955,6 +981,17 @@ export function DrivePage() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setCopyToServerItems([file]);
+                        }}
+                        className="hidden sm:flex min-w-[32px] min-h-[32px] items-center justify-center rounded-lg text-sky-400 hover:bg-sky-400/15 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Copy to Local Server (Pull to VPS)"
+                      >
+                        <HardDriveDownload className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handlePreview(file);
                         }}
                         className="hidden sm:flex min-w-[32px] min-h-[32px] items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors opacity-0 group-hover:opacity-100"
@@ -1171,6 +1208,20 @@ export function DrivePage() {
                 <span>{S.downloadFile}</span>
               </button>
             )}
+
+            {/* Copy to Local Server (Pull to VPS) */}
+            <button
+              type="button"
+              onClick={() => {
+                const item = actionSheetItem;
+                setActionSheetItem(null);
+                setCopyToServerItems([item]);
+              }}
+              className="flex items-center gap-3 w-full px-4 min-h-[44px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover transition-colors"
+            >
+              <HardDriveDownload className="w-5 h-5 text-sky-400" />
+              <span>Copy to Local Server</span>
+            </button>
 
             {/* Open in Drive */}
             <button
@@ -1498,6 +1549,19 @@ export function DrivePage() {
           open={!!manualLocalPath}
           onClose={() => setManualLocalPath("")}
           filePath={manualLocalPath}
+        />
+      )}
+
+      {/* Copy to Local Server Modal */}
+      {copyToServerItems.length > 0 && (
+        <CopyToLocalServerModal
+          open={copyToServerItems.length > 0}
+          onClose={() => setCopyToServerItems([])}
+          items={copyToServerItems}
+          onSuccess={() => {
+            setCopyToServerItems([]);
+            exitSelectMode();
+          }}
         />
       )}
     </div>

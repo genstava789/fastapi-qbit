@@ -95,6 +95,9 @@ export const UI_STRINGS = {
     uploadServerDesc:
       "Enter the full path of a file on the server (VPS) to upload directly to this Drive folder:",
     uploadServerMissingPath: "Please enter a server file path",
+    copyToServer: "Copy to Local Server",
+    copyToServerTitle: "Copy file or folder to local VPS server",
+    batchCopyToServer: (count: number) => `Copy to Server (${count})`,
   },
   driveSettings: {
     emptyTrashConfirm: "Permanently delete all files in Google Drive trash?",
