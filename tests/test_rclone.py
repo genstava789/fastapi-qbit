@@ -30,6 +30,14 @@ drive_type = personal
 """
 
 
+@pytest.fixture(autouse=True)
+def isolate_rclone_environment(tmp_path, monkeypatch):
+    test_home = tmp_path / "fake_home"
+    test_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(os.path, "expanduser", lambda p: str(test_home / "rclone.conf"))
+    monkeypatch.setattr(RcloneService, "_sync_to_system_locations", lambda self, content: None)
+
+
 def test_normalize_rclone_url():
     # GitHub blob to raw
     gh_blob = "https://github.com/alice/dotfiles/blob/main/rclone/rclone.conf"
