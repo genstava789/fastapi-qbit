@@ -150,6 +150,7 @@ async def test_system_stats_endpoint():
         assert "ram_total_bytes" in data and data["ram_total_bytes"] > 0
         assert "disk_total_bytes" in data and data["disk_total_bytes"] > 0
         assert "uptime_seconds" in data
+        assert "default_save_path" in data
 
 
 @pytest.mark.anyio
@@ -158,6 +159,8 @@ async def test_system_paths_traversal_protection(tmp_path, monkeypatch):
 
     sub = tmp_path / "complete"
     sub.mkdir()
+    sample_file = tmp_path / "test_file.txt"
+    sample_file.write_text("hello world")
     monkeypatch.setattr(settings, "DEFAULT_SAVE_PATH", str(tmp_path))
 
     transport = ASGITransport(app=app)
@@ -167,10 +170,46 @@ async def test_system_paths_traversal_protection(tmp_path, monkeypatch):
         assert ok_resp.status_code == 200
         ok_data = ok_resp.json()
         assert any(d["name"] == "complete" for d in ok_data["directories"])
+        assert any(f["name"] == "test_file.txt" for f in ok_data.get("files", []))
 
         # Traversal attempt outside DEFAULT_SAVE_PATH must be rejected
         bad_resp = await client.get("/api/v1/system/paths", params={"path": str(tmp_path.parent)})
         assert bad_resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_system_local_files_listing_and_deletion(tmp_path, monkeypatch):
+    from app.core.config import settings
+    from app.services.qbit_service import qbit_service
+
+    monkeypatch.setattr(settings, "DEFAULT_SAVE_PATH", str(tmp_path))
+    monkeypatch.setattr(qbit_service, "check_connection", lambda: (False, None))
+
+    # Create directory and file
+    sub_dir = tmp_path / "Downloads"
+    sub_dir.mkdir()
+    file_a = sub_dir / "copied_from_drive.mkv"
+    file_a.write_bytes(b"dummy video content")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # List files
+        list_resp = await client.get("/api/v1/system/files")
+        assert list_resp.status_code == 200
+        list_data = list_resp.json()
+        assert "files" in list_data
+        file_names = [f["name"] for f in list_data["files"]]
+        assert "Downloads" in file_names
+        assert "copied_from_drive.mkv" in file_names
+
+        # Delete file
+        del_resp = await client.delete(
+            "/api/v1/system/files",
+            params={"path": str(file_a)},
+        )
+        assert del_resp.status_code == 200
+        assert del_resp.json()["success"] is True
+        assert not file_a.exists()
 
 
 @pytest.mark.anyio

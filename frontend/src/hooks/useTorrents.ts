@@ -249,3 +249,32 @@ export function useServerPaths(path: string | undefined, enabled: boolean) {
     retry: false,
   });
 }
+
+export function useLocalFiles(path?: string, enabled: boolean = true) {
+  const api = useApi();
+  const instance = useActiveInstance();
+  return useQuery({
+    queryKey: ["local-files", instance?.id, path ?? "all"],
+    queryFn: () => api!.listLocalFiles(path),
+    enabled: !!api && enabled,
+    refetchInterval: 5000,
+  });
+}
+
+export function useDeleteLocalFile() {
+  const api = useApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: (filePath: string) => api!.deleteLocalFile(filePath),
+    onSuccess: (data) => {
+      toast.success(data?.message || "File deleted from server");
+      qc.invalidateQueries({ queryKey: ["local-files", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["server-paths", instance?.id] });
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || err?.message || "Failed to delete file";
+      toast.error(msg);
+    },
+  });
+}

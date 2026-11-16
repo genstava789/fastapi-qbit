@@ -3,12 +3,20 @@ import os
 import platform
 import socket
 import time
+import shutil
 from typing import Optional
 import httpx
 import psutil
 from fastapi import APIRouter, HTTPException, Query, status
 from app.core.config import settings
-from app.schemas.torrent import ServerPathItem, ServerPathsResponse, SystemStatsResponse
+from app.schemas.torrent import (
+    LocalFileItem,
+    LocalFilesResponse,
+    ServerFileItem,
+    ServerPathItem,
+    ServerPathsResponse,
+    SystemStatsResponse,
+)
 
 router = APIRouter()
 
@@ -69,9 +77,13 @@ async def get_system_stats():
     cpu_cores = psutil.cpu_count(logical=True) or os.cpu_count() or 1
     vm = psutil.virtual_memory()
 
-    target_disk = settings.DEFAULT_SAVE_PATH
-    if not os.path.exists(target_disk):
-        target_disk = os.path.abspath(os.sep)
+    save_path = os.path.realpath(settings.DEFAULT_SAVE_PATH)
+    try:
+        os.makedirs(save_path, exist_ok=True)
+    except OSError:
+        pass
+
+    target_disk = save_path if os.path.exists(save_path) else os.path.abspath(os.sep)
     disk = psutil.disk_usage(target_disk)
 
     uptime_seconds = max(0, int(time.time() - psutil.boot_time()))
@@ -94,6 +106,7 @@ async def get_system_stats():
         disk_percent=round(float(disk.percent), 1),
         uptime_seconds=uptime_seconds,
         public_ip=public_ip,
+        default_save_path=settings.DEFAULT_SAVE_PATH,
     )
 
 
@@ -101,7 +114,7 @@ async def get_system_stats():
     "/paths",
     response_model=ServerPathsResponse,
     summary="Browse Server Download Paths",
-    description="List directories inside the configured download path for re-seeding local files.",
+    description="List directories and files inside the configured download path for re-seeding local files.",
 )
 def browse_server_paths(
     path: Optional[str] = Query(
@@ -110,11 +123,17 @@ def browse_server_paths(
     ),
 ):
     base_root = os.path.realpath(settings.DEFAULT_SAVE_PATH)
+    try:
+        os.makedirs(base_root, exist_ok=True)
+    except OSError:
+        pass
+
     if not os.path.exists(base_root):
         return ServerPathsResponse(
             current_path=settings.DEFAULT_SAVE_PATH,
             parent_path=None,
             directories=[],
+            files=[],
         )
 
     requested = os.path.realpath(path) if path else base_root
@@ -137,11 +156,27 @@ def browse_server_paths(
         )
 
     dirs: list[ServerPathItem] = []
+    files: list[ServerFileItem] = []
     try:
         with os.scandir(requested) as entries:
             for entry in sorted(entries, key=lambda e: e.name.lower()):
-                if entry.is_dir(follow_symlinks=False) and not entry.name.startswith("."):
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
                     dirs.append(ServerPathItem(name=entry.name, path=entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    try:
+                        stat = entry.stat(follow_symlinks=False)
+                        files.append(
+                            ServerFileItem(
+                                name=entry.name,
+                                path=entry.path,
+                                size=stat.st_size,
+                                modified=stat.st_mtime,
+                            )
+                        )
+                    except OSError:
+                        pass
     except PermissionError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -153,5 +188,150 @@ def browse_server_paths(
         current_path=requested,
         parent_path=parent_path,
         directories=dirs,
+        files=files,
     )
+
+
+@router.get(
+    "/files",
+    response_model=LocalFilesResponse,
+    summary="List Local Server Files and Folders",
+    description="List local files and folders in the server download directory, matched with torrent metadata if available.",
+)
+def list_local_files(
+    path: Optional[str] = Query(
+        default=None,
+        description="Directory path to scan (defaults to configured download directory).",
+    ),
+    recursive: bool = Query(
+        default=True,
+        description="Whether to recursively scan subdirectories.",
+    ),
+):
+    base_root = os.path.realpath(settings.DEFAULT_SAVE_PATH)
+    try:
+        os.makedirs(base_root, exist_ok=True)
+    except OSError:
+        pass
+
+    requested = os.path.realpath(path) if path else base_root
+    try:
+        if os.path.commonpath([base_root, requested]) != base_root:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access outside the configured download directory is not permitted.",
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid path.",
+        ) from e
+
+    if not os.path.exists(requested):
+        return LocalFilesResponse(root_path=base_root, files=[])
+
+    # Map existing torrents for correlation
+    torrent_hash_map: dict[str, str] = {}
+    try:
+        from app.services.qbit_service import qbit_service
+        connected, _ = qbit_service.check_connection()
+        if connected:
+            for t in qbit_service.list_torrents():
+                thash = t.get("hash")
+                cpath = t.get("content_path")
+                tname = t.get("name")
+                if thash:
+                    if cpath:
+                        torrent_hash_map[os.path.realpath(cpath)] = thash
+                    if tname:
+                        torrent_hash_map[tname.lower()] = thash
+    except Exception:
+        pass
+
+    results: list[LocalFileItem] = []
+    max_items = 3000
+
+    def scan_dir(dir_path: str, depth: int = 0):
+        if len(results) >= max_items or depth > 10:
+            return
+        try:
+            with os.scandir(dir_path) as entries:
+                for entry in sorted(entries, key=lambda e: (not e.is_dir(), e.name.lower())):
+                    if entry.name.startswith("."):
+                        continue
+                    try:
+                        is_dir = entry.is_dir(follow_symlinks=False)
+                        stat = entry.stat(follow_symlinks=False)
+                        size = stat.st_size if not is_dir else 0
+                        mod = stat.st_mtime
+                        real_entry_path = os.path.realpath(entry.path)
+                        thash = torrent_hash_map.get(real_entry_path) or torrent_hash_map.get(entry.name.lower())
+
+                        results.append(
+                            LocalFileItem(
+                                name=entry.name,
+                                path=entry.path,
+                                size=size,
+                                modified=mod,
+                                is_directory=is_dir,
+                                parent_path=dir_path,
+                                torrent_hash=thash,
+                            )
+                        )
+                        if is_dir and recursive:
+                            scan_dir(entry.path, depth + 1)
+                    except OSError:
+                        continue
+        except (PermissionError, OSError):
+            pass
+
+    scan_dir(requested, 0)
+    return LocalFilesResponse(root_path=requested, files=results)
+
+
+@router.delete(
+    "/files",
+    summary="Delete Local Server File or Directory",
+    description="Delete a file or directory inside the server download directory.",
+)
+def delete_local_file(
+    path: str = Query(..., description="File or directory path to delete."),
+):
+    base_root = os.path.realpath(settings.DEFAULT_SAVE_PATH)
+    requested = os.path.realpath(path)
+
+    try:
+        if os.path.commonpath([base_root, requested]) != base_root or requested == base_root:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot delete files outside or root of download directory.",
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid path.",
+        ) from e
+
+    if not os.path.exists(requested):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File or directory not found.",
+        )
+
+    try:
+        if os.path.isdir(requested):
+            shutil.rmtree(requested)
+        else:
+            os.remove(requested)
+        return {"success": True, "message": f"Deleted '{os.path.basename(requested)}'"}
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied: {str(e)}",
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete: {str(e)}",
+        ) from e
 

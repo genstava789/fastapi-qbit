@@ -3,6 +3,7 @@ import { normalizeTorrentActionResponse } from "@/lib/utils";
 import type {
   AddMagnetRequest,
   HealthStatus,
+  LocalFilesResponse,
   ServerPathsResponse,
   SystemStats,
   TorrentActionResponse,
@@ -107,6 +108,24 @@ export class QbitApi {
     const { data } = await this.client.get<ServerPathsResponse>("/system/paths", {
       params: path ? { path } : undefined,
     });
+    return data;
+  }
+
+  async listLocalFiles(path?: string, recursive = true): Promise<LocalFilesResponse> {
+    const { data } = await this.client.get<LocalFilesResponse>("/system/files", {
+      params: {
+        path: path || undefined,
+        recursive,
+      },
+    });
+    return data;
+  }
+
+  async deleteLocalFile(path: string): Promise<{ success: boolean; message: string }> {
+    const { data } = await this.client.delete<{ success: boolean; message: string }>(
+      "/system/files",
+      { params: { path } }
+    );
     return data;
   }
 

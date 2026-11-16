@@ -56,6 +56,7 @@ export default function App() {
             <Route path="/crossseed" element={<CrossSeedPage />} />
             <Route path="/network" element={<NetworkPage />} />
             <Route path="/files" element={<FileBrowserPage />} />
+            <Route path="/file" element={<Navigate to="/files" replace />} />
             <Route path="/drive" element={<DrivePage />} />
             <Route path="/drive-setting" element={<DriveSettingPage />} />
             <Route path="/preview/:fileId/:fileName" element={<FilePreviewPage />} />

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Input } from "@/components/ui/Input";
@@ -35,13 +35,21 @@ export function CopyToLocalServerModal({
   const setDriveDefaultLocalPath = useAppStore((s) => s.setDriveDefaultLocalPath);
 
   const { data: stats, isLoading: statsLoading } = useSystemStats();
-  const defaultBasePath = driveDefaultLocalPath || stats?.disk_path || "/downloads";
+  const defaultBasePath =
+    driveDefaultLocalPath || stats?.default_save_path || stats?.disk_path || "/downloads";
 
   const [targetPath, setTargetPath] = useState<string>(defaultBasePath);
+  const [userEditedPath, setUserEditedPath] = useState(false);
   const [browsingPaths, setBrowsingPaths] = useState(false);
   const [browseTarget, setBrowseTarget] = useState<string | undefined>(undefined);
   const [setAsDefault, setSetAsDefault] = useState(false);
   const [autoAttachReseed, setAutoAttachReseed] = useState(false);
+
+  useEffect(() => {
+    if (!userEditedPath && defaultBasePath) {
+      setTargetPath(defaultBasePath);
+    }
+  }, [defaultBasePath, userEditedPath]);
 
   const {
     data: serverPaths,
@@ -166,7 +174,7 @@ export function CopyToLocalServerModal({
                 )}
               </div>
               <span className="text-text-muted font-mono text-[11px] truncate max-w-[140px]">
-                {stats?.disk_path || "/downloads"}
+                {stats?.default_save_path || stats?.disk_path || "/downloads"}
               </span>
             </div>
 
@@ -212,7 +220,10 @@ export function CopyToLocalServerModal({
           <Input
             placeholder="/downloads"
             value={targetPath}
-            onChange={(e) => setTargetPath(e.target.value)}
+            onChange={(e) => {
+              setTargetPath(e.target.value);
+              setUserEditedPath(true);
+            }}
             icon={<FolderOpen className="w-4 h-4 text-warning" />}
           />
 

@@ -93,6 +93,7 @@ class SystemStatsResponse(BaseModel):
     disk_percent: float
     uptime_seconds: int
     public_ip: Optional[str] = None
+    default_save_path: Optional[str] = None
 
 
 class ServerPathItem(BaseModel):
@@ -100,7 +101,30 @@ class ServerPathItem(BaseModel):
     path: str
 
 
+class ServerFileItem(BaseModel):
+    name: str
+    path: str
+    size: int
+    modified: float
+
+
 class ServerPathsResponse(BaseModel):
     current_path: str
     parent_path: Optional[str] = None
     directories: List[ServerPathItem]
+    files: List[ServerFileItem] = []
+
+
+class LocalFileItem(BaseModel):
+    name: str
+    path: str
+    size: int
+    modified: float
+    is_directory: bool
+    parent_path: str
+    torrent_hash: Optional[str] = None
+
+
+class LocalFilesResponse(BaseModel):
+    root_path: str
+    files: List[LocalFileItem]

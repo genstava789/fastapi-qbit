@@ -568,7 +568,7 @@ class GDriveService:
 
         target_dir = (
             destination_path.strip()
-            if destination_path and destination_path.strip()
+            if destination_path and destination_path.strip() and destination_path.strip() not in ("/", "\\")
             else getattr(settings, "DEFAULT_SAVE_PATH", "/downloads")
         )
         target_dir = os.path.abspath(target_dir)

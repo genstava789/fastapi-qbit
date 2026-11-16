@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useTorrents } from "@/hooks/useTorrents";
+import { useTorrents, useLocalFiles, useDeleteLocalFile } from "@/hooks/useTorrents";
 import { formatBytes } from "@/lib/utils";
 import {
   FolderOpen,
@@ -15,13 +15,23 @@ import {
   X,
   UploadCloud,
   HardDriveDownload,
+  CheckCircle2,
 } from "lucide-react";
 import { ListSkeleton, Skeleton } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useDriveAuthStatus, useDriveDownloads } from "@/hooks/useDrive";
 import { DriveAuthModal, UploadToDriveModal, ActiveDriveDownloads } from "@/components/drive";
 import toast from "react-hot-toast";
-import type { TorrentItem, DriveDownloadProgress } from "@/types";
+import type { TorrentItem, DriveDownloadProgress, LocalFileItem } from "@/types";
+
+interface LocalFileEntry {
+  name: string;
+  path: string;
+  size: number;
+  modified?: number;
+  torrentHash?: string;
+  isDriveCompleted?: boolean;
+}
 
 interface FolderNode {
   name: string;
@@ -30,12 +40,14 @@ interface FolderNode {
   size: number;
   children: FolderNode[];
   torrents: TorrentItem[];
+  localFiles: LocalFileEntry[];
   activeDownloads?: DriveDownloadProgress[];
 }
 
 function buildFileTree(
   torrents: TorrentItem[],
-  activeDownloads?: DriveDownloadProgress[]
+  localFiles: LocalFileItem[],
+  driveDownloads: DriveDownloadProgress[]
 ): FolderNode {
   const root: FolderNode = {
     name: "/",
@@ -44,11 +56,13 @@ function buildFileTree(
     size: 0,
     children: [],
     torrents: [],
+    localFiles: [],
     activeDownloads: [],
   };
 
   const getOrCreatePathNode = (rawPath: string) => {
-    const parts = rawPath.replace(/\\/g, "/").split("/").filter(Boolean);
+    const normalized = rawPath.replace(/\\/g, "/");
+    const parts = normalized.split("/").filter(Boolean);
     let current = root;
     let currentPath = "";
 
@@ -63,6 +77,7 @@ function buildFileTree(
           size: 0,
           children: [],
           torrents: [],
+          localFiles: [],
           activeDownloads: [],
         };
         current.children.push(child);
@@ -72,27 +87,75 @@ function buildFileTree(
     return current;
   };
 
-  for (const t of torrents) {
-    const targetNode = getOrCreatePathNode(t.save_path);
-    targetNode.torrents.push(t);
-
-    const parts = t.save_path.replace(/\\/g, "/").split("/").filter(Boolean);
+  const addFolderSize = (rawPath: string, sizeToAdd: number) => {
+    if (!sizeToAdd) return;
+    const parts = rawPath.replace(/\\/g, "/").split("/").filter(Boolean);
     let current = root;
+    root.size += sizeToAdd;
     for (const part of parts) {
       const child = current.children.find((c) => c.name === part);
       if (child) {
-        child.size += t.total_size;
+        child.size += sizeToAdd;
         current = child;
       }
     }
+  };
+
+  // 1. Files from server local disk (including completed Drive downloads on disk)
+  for (const f of localFiles) {
+    if (f.is_directory) {
+      getOrCreatePathNode(f.path);
+    } else {
+      const targetFolder = getOrCreatePathNode(f.parent_path);
+      targetFolder.localFiles.push({
+        name: f.name,
+        path: f.path,
+        size: f.size,
+        modified: f.modified,
+        torrentHash: f.torrent_hash || undefined,
+      });
+      addFolderSize(f.parent_path, f.size);
+    }
   }
 
-  // Inject active downloads into their target destination folder
-  if (activeDownloads && activeDownloads.length > 0) {
-    for (const d of activeDownloads) {
-      const targetFolder = getOrCreatePathNode(d.destination_path || "/downloads");
+  // 2. Torrents from qBittorrent
+  for (const t of torrents) {
+    const targetNode = getOrCreatePathNode(t.save_path);
+    const existing = targetNode.localFiles.find(
+      (f) => f.name.toLowerCase() === t.name.toLowerCase()
+    );
+    if (existing) {
+      existing.torrentHash = t.hash;
+    } else {
+      targetNode.torrents.push(t);
+      addFolderSize(t.save_path, t.total_size);
+    }
+  }
+
+  // 3. Google Drive downloads (active & completed)
+  for (const d of driveDownloads) {
+    const dest = d.destination_path || "/downloads";
+    const targetFolder = getOrCreatePathNode(dest);
+
+    if (d.status === "downloading" || d.status === "pending") {
       if (!targetFolder.activeDownloads) targetFolder.activeDownloads = [];
       targetFolder.activeDownloads.push(d);
+    } else if (d.status === "completed") {
+      const existing = targetFolder.localFiles.find(
+        (f) => f.name.toLowerCase() === d.filename.toLowerCase()
+      );
+      if (existing) {
+        existing.isDriveCompleted = true;
+      } else {
+        const fullPath = `${dest.replace(/[/\\]+$/, "")}/${d.filename}`;
+        targetFolder.localFiles.push({
+          name: d.filename,
+          path: fullPath,
+          size: d.total_bytes || 0,
+          isDriveCompleted: true,
+        });
+        addFolderSize(dest, d.total_bytes || 0);
+      }
     }
   }
 
@@ -100,7 +163,7 @@ function buildFileTree(
 }
 
 interface ActionTarget {
-  type: "folder" | "torrent";
+  type: "folder" | "torrent" | "file";
   title: string;
   savePath: string;
   torrentHash?: string;
@@ -121,9 +184,16 @@ function FolderItem({
   );
   const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
 
+  const hasItems =
+    node.children.length > 0 ||
+    node.torrents.length > 0 ||
+    node.localFiles.length > 0 ||
+    (node.activeDownloads && node.activeDownloads.length > 0);
+
   const hasCompleted =
     node.torrents.some((t) => t.progress >= 100) ||
     node.children.length > 0 ||
+    node.localFiles.length > 0 ||
     (node.activeDownloads && node.activeDownloads.length > 0);
 
   return (
@@ -137,9 +207,7 @@ function FolderItem({
           onClick={() => setExpanded(!expanded)}
           className="flex items-center gap-2 flex-1 min-w-0 min-h-[44px] py-2 text-left"
         >
-          {node.children.length > 0 ||
-          node.torrents.length > 0 ||
-          (node.activeDownloads && node.activeDownloads.length > 0) ? (
+          {hasItems ? (
             expanded ? (
               <ChevronDown className="w-4 h-4 text-text-muted flex-shrink-0" />
             ) : (
@@ -217,6 +285,56 @@ function FolderItem({
               </div>
             </div>
           ))}
+
+          {/* Local files on disk (including completed Drive downloads) */}
+          {node.localFiles?.map((file) => (
+            <div
+              key={file.path}
+              className="flex items-center gap-2 pr-1 min-h-[48px] py-2 hover:bg-glass-hover/30 rounded-xl transition-colors"
+              style={{ paddingLeft: `${Math.min(depth + 1, 4) * 14 + 8}px` }}
+            >
+              <span className="w-4 flex-shrink-0" />
+              {file.isDriveCompleted ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              ) : (
+                <File className="w-4 h-4 text-sky-400 flex-shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <p className="text-sm text-text-primary truncate font-medium">{file.name}</p>
+                  {file.isDriveCompleted && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
+                      From Drive
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-text-muted font-mono">
+                  {formatBytes(file.size)} ·{" "}
+                  <span className={file.isDriveCompleted ? "text-emerald-400 font-medium" : "text-text-muted"}>
+                    {file.isDriveCompleted ? "Copied to Server" : "Local File"}
+                  </span>
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenActionMenu({
+                    type: "file",
+                    title: file.name,
+                    savePath: file.path,
+                    torrentHash: file.torrentHash,
+                  })
+                }
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover flex-shrink-0"
+                aria-label={`Actions for ${file.name}`}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+
+          {/* Standalone torrents */}
           {node.torrents.map((t) => (
             <div
               key={t.hash}
@@ -295,13 +413,10 @@ function FolderItem({
 }
 
 export function FileBrowserPage() {
-  const { data: torrents, isLoading } = useTorrents();
+  const { data: torrents, isLoading: torrentsLoading } = useTorrents();
+  const { data: localFilesData, isLoading: localFilesLoading } = useLocalFiles();
   const { data: driveDownloads } = useDriveDownloads();
-  const activeDownloads = useMemo(() => {
-    return driveDownloads?.filter(
-      (d) => d.status === "downloading" || d.status === "pending"
-    );
-  }, [driveDownloads]);
+  const deleteLocalFileMutation = useDeleteLocalFile();
 
   const searchQuery = useAppStore((s) => s.searchQuery);
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
@@ -327,27 +442,43 @@ export function FileBrowserPage() {
   };
 
   const filteredTree = useMemo(() => {
-    if (!torrents && (!activeDownloads || activeDownloads.length === 0)) return null;
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
     const filteredTorrents = (torrents || []).filter(
       (t) =>
         !q ||
         t.name.toLowerCase().includes(q) ||
         t.save_path.toLowerCase().includes(q)
     );
-    const filteredDownloads = (activeDownloads || []).filter(
+    const filteredFiles = (localFilesData?.files || []).filter(
+      (f) =>
+        !q ||
+        f.name.toLowerCase().includes(q) ||
+        f.path.toLowerCase().includes(q)
+    );
+    const filteredDownloads = (driveDownloads || []).filter(
       (d) =>
         !q ||
         d.filename.toLowerCase().includes(q) ||
         d.destination_path.toLowerCase().includes(q)
     );
-    return buildFileTree(filteredTorrents, filteredDownloads);
-  }, [searchQuery, torrents, activeDownloads]);
+
+    if (
+      filteredTorrents.length === 0 &&
+      filteredFiles.length === 0 &&
+      filteredDownloads.length === 0
+    ) {
+      return null;
+    }
+
+    return buildFileTree(filteredTorrents, filteredFiles, filteredDownloads);
+  }, [searchQuery, torrents, localFilesData, driveDownloads]);
 
   const copyPath = (path: string) => {
     navigator.clipboard.writeText(path);
     toast.success("Path copied");
   };
+
+  const isLoading = torrentsLoading && localFilesLoading;
 
   return (
     <div className="space-y-6">
@@ -377,15 +508,17 @@ export function FileBrowserPage() {
       {isLoading ? (
         <Skeleton className="h-4 w-44" />
       ) : (
-        torrents && (
-          <div className="flex items-center gap-4 text-sm text-text-secondary">
-            <span className="flex items-center gap-1.5">
-              <HardDrive className="w-4 h-4" />
-              {formatBytes(torrents.reduce((s, t) => s + t.total_size, 0))} total
-            </span>
-            <span>{torrents.length} torrents</span>
-          </div>
-        )
+        <div className="flex items-center gap-4 text-sm text-text-secondary">
+          <span className="flex items-center gap-1.5">
+            <HardDrive className="w-4 h-4" />
+            {formatBytes(filteredTree?.size || 0)} total
+          </span>
+          <span>
+            {(localFilesData?.files?.filter((f) => !f.is_directory).length || 0) +
+              (torrents?.length || 0)}{" "}
+            files on server
+          </span>
+        </div>
       )}
 
       {/* File Tree */}
@@ -395,6 +528,7 @@ export function FileBrowserPage() {
         <div className="glass rounded-xl p-2">
           {filteredTree.children.length > 0 ||
           filteredTree.torrents.length > 0 ||
+          filteredTree.localFiles.length > 0 ||
           (filteredTree.activeDownloads && filteredTree.activeDownloads.length > 0) ? (
             filteredTree.children.map((child) => (
               <FolderItem
@@ -410,7 +544,12 @@ export function FileBrowserPage() {
             </div>
           )}
         </div>
-      ) : null}
+      ) : (
+        <div className="glass rounded-xl p-12 text-center">
+          <FolderOpen className="w-12 h-12 mx-auto mb-3 text-text-muted opacity-30" />
+          <p className="text-text-secondary">No files found on server</p>
+        </div>
+      )}
 
       {/* File/Folder Action Sheet */}
       {actionTarget && (
@@ -482,7 +621,7 @@ export function FileBrowserPage() {
               Copy Server Path
             </button>
 
-            {actionTarget.torrentHash && (
+            {actionTarget.torrentHash ? (
               <div className="pt-2 border-t border-glass-border">
                 <button
                   type="button"
@@ -497,7 +636,24 @@ export function FileBrowserPage() {
                   Delete Torrent
                 </button>
               </div>
-            )}
+            ) : actionTarget.type === "file" ? (
+              <div className="pt-2 border-t border-glass-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const path = actionTarget.savePath;
+                    setActionTarget(null);
+                    if (window.confirm(`Delete local file "${actionTarget.title}"?`)) {
+                      deleteLocalFileMutation.mutate(path);
+                    }
+                  }}
+                  className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-danger hover:bg-danger/10 transition-colors"
+                >
+                  <Trash2 className="w-5 h-5" />
+                  Delete Local File
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       )}

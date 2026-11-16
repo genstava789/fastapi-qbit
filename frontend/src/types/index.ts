@@ -68,6 +68,7 @@ export interface SystemStats {
   disk_percent: number;
   uptime_seconds: number;
   public_ip: string | null;
+  default_save_path?: string;
 }
 
 export interface ServerPathItem {
@@ -75,10 +76,33 @@ export interface ServerPathItem {
   path: string;
 }
 
+export interface ServerFileItem {
+  name: string;
+  path: string;
+  size: number;
+  modified: number;
+}
+
 export interface ServerPathsResponse {
   current_path: string;
   parent_path: string | null;
   directories: ServerPathItem[];
+  files?: ServerFileItem[];
+}
+
+export interface LocalFileItem {
+  name: string;
+  path: string;
+  size: number;
+  modified: number;
+  is_directory: boolean;
+  parent_path: string;
+  torrent_hash?: string | null;
+}
+
+export interface LocalFilesResponse {
+  root_path: string;
+  files: LocalFileItem[];
 }
 
 export interface ProwlarrSearchResult {
