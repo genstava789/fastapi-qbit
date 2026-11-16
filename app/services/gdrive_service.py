@@ -618,7 +618,11 @@ class GDriveService:
             task_id = str(uuid.uuid4())
             file_id = item.get("file_id") or item.get("id") or ""
             name = item.get("name") or "download"
-            size = item.get("size")
+            raw_size = item.get("size")
+            try:
+                size_int = int(raw_size) if raw_size is not None else 0
+            except (ValueError, TypeError):
+                size_int = 0
             mime_type = item.get("mime_type") or item.get("mimeType") or ""
             is_dir = mime_type == "application/vnd.google-apps.folder"
 
@@ -628,7 +632,7 @@ class GDriveService:
                 filename=name,
                 destination_path=target_dir,
                 status="pending",
-                total_bytes=size or 0,
+                total_bytes=size_int,
                 is_directory=is_dir,
                 auto_attach_reseed=auto_attach_reseed,
             )
