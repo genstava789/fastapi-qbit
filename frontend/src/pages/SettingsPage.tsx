@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "@/stores/appStore";
 import { useActiveInstance, useSystemStats, useHealth } from "@/hooks/useTorrents";
 import { formatBytes, formatUptime } from "@/lib/utils";
@@ -18,8 +18,14 @@ import {
   Terminal,
   RefreshCw,
   AlertCircle,
+  FolderSync,
+  UploadCloud,
+  Link,
+  FileText,
+  CheckCircle2,
 } from "lucide-react";
-import type { Instance } from "@/types";
+import type { Instance, RcloneConfigResponse } from "@/types";
+import { RcloneApi } from "@/api/client";
 
 const COLORS = [
   "#6366f1",
@@ -200,6 +206,448 @@ function SystemResourcesCard() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function RcloneConfigCard() {
+  const activeInstance = useActiveInstance();
+  const [config, setConfig] = useState<RcloneConfigResponse | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
+  const [activeTab, setActiveTab] = useState<"url" | "upload">("url");
+  const [urlInput, setUrlInput] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const api = useMemo(() => {
+    if (!activeInstance) return null;
+    return new RcloneApi(activeInstance.url, activeInstance.apiPrefix);
+  }, [activeInstance]);
+
+  const loadConfig = useCallback(async () => {
+    if (!api) return;
+    setIsFetching(true);
+    try {
+      const data = await api.getConfig();
+      setConfig(data);
+    } catch (err: any) {
+      console.error("Failed to load rclone config:", err);
+    } finally {
+      setIsFetching(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    let active = true;
+    if (api) {
+      setIsFetching(true);
+      api
+        .getConfig()
+        .then((data) => {
+          if (active) setConfig(data);
+        })
+        .catch((err) => {
+          console.error("Failed to load rclone config:", err);
+        })
+        .finally(() => {
+          if (active) setIsFetching(false);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  if (!activeInstance) return null;
+
+  const handleSaveUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!api || !urlInput.trim()) return;
+    setIsSubmitting(true);
+    setStatusMessage(null);
+    try {
+      const res = await api.saveConfigFromUrl(urlInput.trim());
+      setConfig(res);
+      setStatusMessage({
+        type: "success",
+        text:
+          res.message ||
+          `Konfigurasi rclone berhasil disimpan (${res.remotes.length} remote terdeteksi).`,
+      });
+      setUrlInput("");
+    } catch (err: any) {
+      setStatusMessage({
+        type: "error",
+        text:
+          err.response?.data?.detail ||
+          err.message ||
+          "Gagal mengunduh atau memproses rclone.conf dari URL.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUploadFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!api || !selectedFile) return;
+    setIsSubmitting(true);
+    setStatusMessage(null);
+    try {
+      const res = await api.uploadConfigFile(selectedFile);
+      setConfig(res);
+      setStatusMessage({
+        type: "success",
+        text:
+          res.message ||
+          `File ${selectedFile.name} berhasil diunggah (${res.remotes.length} remote terdeteksi).`,
+      });
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err: any) {
+      setStatusMessage({
+        type: "error",
+        text:
+          err.response?.data?.detail ||
+          err.message ||
+          "Gagal mengunggah konfigurasi rclone.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!api) return;
+    if (
+      !window.confirm(
+        "Apakah Anda yakin ingin menghapus file konfigurasi rclone ini?"
+      )
+    )
+      return;
+    setIsSubmitting(true);
+    setStatusMessage(null);
+    try {
+      const res = await api.deleteConfig();
+      setConfig(res);
+      setStatusMessage({
+        type: "success",
+        text: "Konfigurasi rclone berhasil dihapus.",
+      });
+    } catch (err: any) {
+      setStatusMessage({
+        type: "error",
+        text:
+          err.response?.data?.detail ||
+          err.message ||
+          "Gagal menghapus konfigurasi rclone.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="glass rounded-xl p-5 space-y-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-glass-border">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <FolderSync className="w-5 h-5 text-accent flex-shrink-0" />
+          <h2 className="text-base sm:text-lg font-semibold text-text-primary">
+            Rclone Configuration
+          </h2>
+          {config?.configured ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <CheckCircle2 className="w-3 h-3" />
+              Active ({config.remotes.length} Remotes)
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-surface-elevated text-text-muted border border-glass-border">
+              <AlertCircle className="w-3 h-3" />
+              Not Configured
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => loadConfig()}
+          className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl hover:bg-glass-hover text-text-secondary hover:text-text-primary transition-colors"
+          aria-label="Refresh rclone config"
+          title="Refresh rclone config"
+        >
+          <RefreshCw
+            className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
+          />
+        </button>
+      </div>
+
+      {/* Status or Alert Message */}
+      {statusMessage && (
+        <div
+          className={`flex items-start justify-between gap-2 p-3 rounded-xl border text-sm ${
+            statusMessage.type === "success"
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+              : "bg-danger/10 border-danger/20 text-red-300"
+          }`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {statusMessage.type === "success" ? (
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+            ) : (
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-danger" />
+            )}
+            <span className="text-xs sm:text-sm">{statusMessage.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStatusMessage(null)}
+            className="text-text-muted hover:text-text-primary p-0.5"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Configured Details */}
+      {config?.configured && (
+        <div className="space-y-3 p-4 rounded-xl bg-surface-elevated/70 border border-glass-border">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs sm:text-sm font-medium text-text-primary">
+              Configured Remotes
+            </span>
+            <div className="flex items-center gap-3 text-xs text-text-secondary">
+              {config.file_size > 0 && (
+                <span>
+                  Size:{" "}
+                  <span className="font-mono text-text-primary">
+                    {formatBytes(config.file_size)}
+                  </span>
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isSubmitting}
+                className="flex items-center gap-1 text-danger hover:underline text-xs"
+              >
+                <Trash2 className="w-3 h-3" />
+                Remove Config
+              </button>
+            </div>
+          </div>
+
+          {config.remotes.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {config.remotes_detail && config.remotes_detail.length > 0
+                ? config.remotes_detail.map((remote) => (
+                    <div
+                      key={remote.name}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-elevated border border-glass-border font-mono text-xs text-text-primary"
+                    >
+                      <span className="font-semibold text-accent">
+                        {remote.name}:
+                      </span>
+                      {remote.type && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-accent/20 text-accent font-sans">
+                          {remote.type}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                : config.remotes.map((name) => (
+                    <div
+                      key={name}
+                      className="px-2.5 py-1 rounded-lg bg-surface-elevated border border-glass-border font-mono text-xs font-semibold text-accent"
+                    >
+                      {name}:
+                    </div>
+                  ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-secondary italic">
+              File rclone.conf terpasang tetapi belum ada remote yang didefinisikan.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Setup Methods */}
+      <div className="space-y-3 pt-1">
+        <div className="flex items-center justify-between">
+          <p className="text-xs sm:text-sm font-medium text-text-secondary">
+            {config?.configured
+              ? "Perbarui Konfigurasi (rclone.conf)"
+              : "Pasang Konfigurasi (rclone.conf)"}
+          </p>
+        </div>
+
+        {/* Method Segmented Tabs */}
+        <div className="flex gap-1.5 p-1 rounded-xl bg-surface-elevated/80 border border-glass-border">
+          <button
+            type="button"
+            onClick={() => setActiveTab("url")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+              activeTab === "url"
+                ? "bg-accent text-white shadow-sm"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            <Link className="w-3.5 h-3.5" />
+            GitHub / Gist URL
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("upload")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+              activeTab === "upload"
+                ? "bg-accent text-white shadow-sm"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+            Upload File
+          </button>
+        </div>
+
+        {/* Tab 1: URL Method */}
+        {activeTab === "url" && (
+          <form onSubmit={handleSaveUrl} className="space-y-3 pt-1">
+            <div className="space-y-1.5">
+              <Input
+                label="Raw GitHub / Gist URL"
+                placeholder="https://gist.githubusercontent.com/.../raw/rclone.conf"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                icon={<Link className="w-4 h-4" />}
+              />
+              <p className="text-[11px] text-text-muted leading-relaxed">
+                Mendukung tautan GitHub Raw, Gist Raw, atau link gist/github biasa (akan otomatis dikonversi ke raw URL).
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={isSubmitting || !urlInput.trim()}
+                icon={
+                  isSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )
+                }
+              >
+                {isSubmitting ? "Mengunduh & Menyimpan..." : "Unduh & Simpan Config"}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {/* Tab 2: Upload File Method */}
+        {activeTab === "upload" && (
+          <form onSubmit={handleUploadFile} className="space-y-3 pt-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".conf,.txt,*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) setSelectedFile(file);
+              }}
+            />
+
+            {!selectedFile ? (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-glass-border hover:border-accent/50 rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors bg-surface-elevated/40"
+              >
+                <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+                  <UploadCloud className="w-5 h-5" />
+                </div>
+                <div className="text-center">
+                  <p className="text-xs sm:text-sm font-medium text-text-primary">
+                    Klik untuk memilih file{" "}
+                    <span className="text-accent font-mono">rclone.conf</span>
+                  </p>
+                  <p className="text-[11px] text-text-muted mt-0.5">
+                    Mendukung ekstensi .conf atau file teks konfigurasi
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-surface-elevated/80 border border-glass-border">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FileText className="w-4 h-4 text-accent flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-text-primary truncate">
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-[10px] text-text-muted font-mono">
+                      {formatBytes(selectedFile.size)}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                  className="p-1 hover:bg-glass-hover rounded-lg text-text-muted hover:text-danger transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={isSubmitting || !selectedFile}
+                icon={
+                  isSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )
+                }
+              >
+                {isSubmitting ? "Mengunggah..." : "Unggah & Simpan Config"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Bot Shell Integration Hint */}
+      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-surface-elevated/60 border border-glass-border text-xs text-text-secondary">
+        <Terminal className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
+        <div className="space-y-0.5 leading-relaxed">
+          <p className="font-medium text-text-primary">Integrasi Bot Telegram</p>
+          <p className="text-text-muted text-[11px]">
+            Konfigurasi rclone ini otomatis dibaca saat menjalankan perintah{" "}
+            <code className="px-1 py-0.5 bg-surface-elevated rounded text-accent font-mono text-[10px]">
+              /shell rclone &lt;perintah&gt;
+            </code>{" "}
+            pada Telegram bot tanpa perlu menyisipkan flag{" "}
+            <code className="text-text-primary font-mono text-[10px]">
+              --config
+            </code>
+            .
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -474,10 +922,13 @@ export function SettingsPage() {
         )}
       </div>
 
-      {/* 2. System Resources Card (Placed between Instances and About) */}
+      {/* 2. System Resources Card */}
       <SystemResourcesCard />
 
-      {/* 3. About */}
+      {/* 3. Rclone Configuration Card */}
+      <RcloneConfigCard />
+
+      {/* 4. About */}
       <div className="glass rounded-xl p-5">
         <h2 className="text-lg font-semibold text-text-primary mb-3">About</h2>
         <div className="space-y-2 text-sm">

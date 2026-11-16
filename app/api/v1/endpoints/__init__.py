@@ -3,5 +3,6 @@ from app.api.v1.endpoints.system import router as system_router
 from app.api.v1.endpoints.torrents import router as torrents_router
 from app.api.v1.endpoints.gdrive import router as gdrive_router
 from app.api.v1.endpoints.prowlarr import router as prowlarr_router
+from app.api.v1.endpoints.rclone import router as rclone_router
 
-__all__ = ["health_router", "system_router", "torrents_router", "gdrive_router", "prowlarr_router"]
+__all__ = ["health_router", "system_router", "torrents_router", "gdrive_router", "prowlarr_router", "rclone_router"]

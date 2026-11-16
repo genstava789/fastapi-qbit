@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     PROWLARR_API_KEY: str | None = None
     PROWLARR_SETTINGS_FILE: str = "prowlarr_settings.json"
 
+    # Rclone Settings (runtime config stored in rclone.conf)
+    RCLONE_CONFIG_FILE: str = "rclone.conf"
+
     # Telegram Bot Settings (Pyrogram)
     TELEGRAM_BOT_TOKEN: str | None = None
     BOT_TOKEN: str | None = None

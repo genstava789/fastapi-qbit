@@ -242,6 +242,25 @@ export interface DriveBreadcrumb {
   name: string;
 }
 
+export interface RcloneRemoteItem {
+  name: string;
+  type?: string | null;
+}
+
+export interface RcloneConfigResponse {
+  configured: boolean;
+  file_path?: string | null;
+  file_size: number;
+  modified_at?: number | null;
+  remotes: string[];
+  remotes_detail?: RcloneRemoteItem[];
+  message?: string | null;
+}
+
+export interface RcloneUrlPayload {
+  url: string;
+}
+
 export type SortDirection = "asc" | "desc";
 export type TorrentFilter =
   | "all"

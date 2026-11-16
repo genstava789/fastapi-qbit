@@ -55,6 +55,7 @@ services:
       - ./token.json:/app/token.json
       - ./gdrive_settings.json:/app/gdrive_settings.json
       - ./prowlarr_settings.json:/app/prowlarr_settings.json
+      - ./rclone.conf:/app/rclone.conf
     ports:
       - "8000:8000"
     depends_on:
@@ -78,6 +79,7 @@ services:
       - TELEGRAM_AUTHORIZED_USERS=${TELEGRAM_AUTHORIZED_USERS:-}
     volumes:
       - ./downloads:/downloads:ro
+      - ./rclone.conf:/app/rclone.conf:ro
     depends_on:
       - qbittorrent
     restart: unless-stopped

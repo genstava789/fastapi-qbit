@@ -8,7 +8,7 @@ import os
 import shlex
 import shutil
 import time
-from typing import Any, BinaryIO, Set, Union
+from typing import Any, BinaryIO, Optional, Set, Union
 from app.core.config import settings
 
 LOGGER = logging.getLogger("qbit_bot")
@@ -259,14 +259,40 @@ def new_task(func):
     return wrapper
 
 
-async def cmd_exec(cmd: Union[str, list], shell: bool = False):
+def get_rclone_config_path() -> Optional[str]:
+    """Finds the active rclone.conf file on the filesystem if available."""
+    candidates = [
+        os.getenv("RCLONE_CONFIG"),
+        getattr(settings, "RCLONE_CONFIG_FILE", None),
+        os.path.join(os.getcwd(), "rclone.conf"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rclone.conf"),
+        os.path.expanduser("~/.config/rclone/rclone.conf"),
+        "/home/boxd/fastapi-qbit/rclone.conf",
+        "/home/boxd/.config/rclone/rclone.conf",
+        "/app/rclone.conf",
+    ]
+    for path in candidates:
+        if path and isinstance(path, str) and os.path.isfile(path) and os.path.getsize(path) > 0:
+            return os.path.abspath(path)
+    return None
+
+
+async def cmd_exec(cmd: Union[str, list], shell: bool = False, env: dict = None):
     """Executes a command asynchronously and returns (stdout, stderr, returncode)."""
+    sub_env = os.environ.copy()
+    if env:
+        sub_env.update(env)
+
+    rclone_path = get_rclone_config_path()
+    if rclone_path and "RCLONE_CONFIG" not in sub_env:
+        sub_env["RCLONE_CONFIG"] = rclone_path
+
     if shell:
-        proc = await create_subprocess_shell(cmd, stdout=PIPE, stderr=PIPE)
+        proc = await create_subprocess_shell(cmd, stdout=PIPE, stderr=PIPE, env=sub_env)
     else:
         if isinstance(cmd, str):
             cmd = shlex.split(cmd)
-        proc = await create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
+        proc = await create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE, env=sub_env)
     stdout, stderr = await proc.communicate()
     try:
         stdout = stdout.decode().strip()

@@ -21,6 +21,7 @@ import type {
   ProwlarrConfigResponse,
   ProwlarrSearchResult,
   ProwlarrTestResponse,
+  RcloneConfigResponse,
 } from "@/types";
 
 export function createApiClient(baseUrl: string, apiPrefix = "/api/v1"): AxiosInstance {
@@ -487,6 +488,38 @@ export class ProwlarrApi {
   async addToQbit(payload: ProwlarrAddPayload): Promise<TorrentActionResponse> {
     const { data } = await this.client.post<TorrentActionResponse>("/prowlarr/add", payload);
     return normalizeTorrentActionResponse(data, "Torrent added to qBittorrent!");
+  }
+}
+
+export class RcloneApi {
+  private client: AxiosInstance;
+
+  constructor(baseUrl: string, apiPrefix = "/api/v1") {
+    this.client = createApiClient(baseUrl, apiPrefix);
+  }
+
+  async getConfig(): Promise<RcloneConfigResponse> {
+    const { data } = await this.client.get<RcloneConfigResponse>("/rclone/config");
+    return data;
+  }
+
+  async saveConfigFromUrl(url: string): Promise<RcloneConfigResponse> {
+    const { data } = await this.client.post<RcloneConfigResponse>("/rclone/config/url", { url });
+    return data;
+  }
+
+  async uploadConfigFile(file: File): Promise<RcloneConfigResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const { data } = await this.client.post<RcloneConfigResponse>("/rclone/config/upload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return data;
+  }
+
+  async deleteConfig(): Promise<RcloneConfigResponse> {
+    const { data } = await this.client.delete<RcloneConfigResponse>("/rclone/config");
+    return data;
   }
 }
 

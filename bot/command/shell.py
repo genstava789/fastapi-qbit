@@ -1,11 +1,13 @@
 from io import BytesIO
 import logging
+import re
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
 from bot import LOGGER
 from bot.utils import (
     cmd_exec,
+    get_rclone_config_path,
     is_user_authorized,
     new_task,
     send_file,
@@ -28,11 +30,20 @@ async def run_shell(_, message: Message):
         return
 
     text = message.text or message.caption or ""
-    cmd = text.split(maxsplit=1)
-    if len(cmd) == 1 or not cmd:
+    cmd_parts = text.split(maxsplit=1)
+    if len(cmd_parts) == 1 or not cmd_parts:
         await send_message(message, "No command to execute was given.")
         return
-    cmd = cmd[1]
+    cmd = cmd_parts[1]
+
+    # Automatically load rclone.conf if executing rclone
+    stripped = cmd.strip()
+    rclone_cfg = get_rclone_config_path()
+    if (stripped == "rclone" or stripped.startswith("rclone ") or stripped.startswith("rclone\t")) and rclone_cfg:
+        if "--config" not in cmd:
+            cmd = re.sub(r"^rclone(\s+|$)", f'rclone --config "{rclone_cfg}" ', stripped).strip()
+            logger.info(f"Injected rclone config: {rclone_cfg}")
+
     stdout, stderr, _ = await cmd_exec(cmd, shell=True)
     reply = ""
     if len(stdout) != 0:
