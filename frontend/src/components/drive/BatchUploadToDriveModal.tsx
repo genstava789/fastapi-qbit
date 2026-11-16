@@ -14,10 +14,18 @@ import {
   FileCheck2,
 } from "lucide-react";
 
+export interface BatchUploadItem {
+  filePath: string;
+  name: string;
+  size?: number;
+  torrentHash?: string;
+}
+
 interface BatchUploadToDriveModalProps {
   open: boolean;
   onClose: () => void;
-  torrents: TorrentItem[];
+  torrents?: TorrentItem[];
+  items?: BatchUploadItem[];
   allSelectedCount?: number;
   onSuccess?: () => void;
 }
@@ -25,7 +33,8 @@ interface BatchUploadToDriveModalProps {
 export function BatchUploadToDriveModal({
   open,
   onClose,
-  torrents,
+  torrents = [],
+  items,
   allSelectedCount,
   onSuccess,
 }: BatchUploadToDriveModalProps) {
@@ -46,14 +55,28 @@ export function BatchUploadToDriveModal({
 
   const batchUploadMutation = useBatchUploadToDrive();
 
-  const totalBytes = torrents.reduce((acc, t) => acc + (t.total_size || 0), 0);
+  // Normalize input items
+  const uploadItems: BatchUploadItem[] = items && items.length > 0
+    ? items
+    : torrents.map((t) => ({
+        filePath:
+          t.content_path ||
+          (t.save_path.endsWith("/")
+            ? `${t.save_path}${t.name}`
+            : `${t.save_path}/${t.name}`),
+        torrentHash: t.hash,
+        name: t.name,
+        size: t.total_size,
+      }));
+
+  const totalBytes = uploadItems.reduce((acc, it) => acc + (it.size || 0), 0);
   const skippedCount =
-    allSelectedCount && allSelectedCount > torrents.length
-      ? allSelectedCount - torrents.length
+    allSelectedCount && allSelectedCount > uploadItems.length
+      ? allSelectedCount - uploadItems.length
       : 0;
 
   const handleUpload = () => {
-    if (torrents.length === 0) return;
+    if (uploadItems.length === 0) return;
 
     if (setAsDefault) {
       setDriveDefaultFolder(targetFolderId, targetFolderName);
@@ -63,21 +86,14 @@ export function BatchUploadToDriveModal({
       });
     }
 
-    const items = torrents.map((t) => {
-      const fullPath =
-        t.content_path ||
-        (t.save_path.endsWith("/")
-          ? `${t.save_path}${t.name}`
-          : `${t.save_path}/${t.name}`);
-      return {
-        filePath: fullPath,
-        torrentHash: t.hash,
-        name: t.name,
-      };
-    });
+    const payload = uploadItems.map((it) => ({
+      filePath: it.filePath,
+      torrentHash: it.torrentHash,
+      name: it.name,
+    }));
 
     batchUploadMutation.mutate(
-      { items, folderId: targetFolderId },
+      { items: payload, folderId: targetFolderId },
       {
         onSuccess: (data) => {
           if (data.some((r) => !r.error)) {
@@ -101,7 +117,7 @@ export function BatchUploadToDriveModal({
               </div>
               <div>
                 <p className="text-sm font-semibold text-text-primary">
-                  {torrents.length} Torrent{torrents.length > 1 ? "s" : ""} Complete
+                  {uploadItems.length} Item{uploadItems.length > 1 ? "s" : ""} Selected
                 </p>
                 <p className="text-xs text-text-muted">
                   Total payload: <span className="font-mono">{formatBytes(totalBytes)}</span>
@@ -118,33 +134,33 @@ export function BatchUploadToDriveModal({
             <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>
-                {skippedCount} torrent yang belum complete dilewati secara otomatis.
+                {skippedCount} item(s) skipped automatically.
               </span>
             </div>
           )}
 
-          {/* Torrents List Preview */}
+          {/* Items List Preview */}
           <div className="space-y-1.5">
             <p className="text-xs uppercase tracking-wider text-text-muted font-semibold">
-              Selected Torrents ({torrents.length})
+              Selected Items ({uploadItems.length})
             </p>
             <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 rounded-xl">
-              {torrents.map((t) => {
+              {uploadItems.map((it, idx) => {
                 const isAlreadyUploaded =
-                  (t.hash && completedDriveUploads[t.hash]) ||
-                  (t.name && completedDriveUploads[t.name]);
+                  (it.torrentHash && completedDriveUploads[it.torrentHash]) ||
+                  (it.name && completedDriveUploads[it.name]);
 
                 return (
                   <div
-                    key={t.hash}
+                    key={it.filePath || it.torrentHash || idx}
                     className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-surface-elevated/60 border border-glass-border text-xs"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-text-primary truncate" title={t.name}>
-                        {t.name}
+                      <p className="font-medium text-text-primary truncate" title={it.name}>
+                        {it.name}
                       </p>
                       <p className="text-text-muted font-mono text-[11px] mt-0.5">
-                        {formatBytes(t.total_size)}
+                        {formatBytes(it.size || 0)}
                       </p>
                     </div>
                     {isAlreadyUploaded && (
@@ -196,7 +212,7 @@ export function BatchUploadToDriveModal({
           <button
             type="button"
             onClick={handleUpload}
-            disabled={batchUploadMutation.isPending || torrents.length === 0}
+            disabled={batchUploadMutation.isPending || uploadItems.length === 0}
             className="w-full min-h-[44px] flex items-center justify-center gap-2 rounded-xl bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm transition-colors shadow-lg shadow-accent/20"
           >
             {batchUploadMutation.isPending ? (
@@ -207,7 +223,7 @@ export function BatchUploadToDriveModal({
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                Upload {torrents.length} Torrent{torrents.length > 1 ? "s" : ""} to Drive
+                Upload {uploadItems.length} Item{uploadItems.length > 1 ? "s" : ""} to Drive
               </>
             )}
           </button>

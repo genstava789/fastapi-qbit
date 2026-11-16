@@ -4,7 +4,10 @@ import {
   useLocalFiles,
   useDeleteLocalFile,
   useRenameLocalFile,
+  useApi,
+  useActiveInstance,
 } from "@/hooks/useTorrents";
+import { useQueryClient } from "@tanstack/react-query";
 import { formatBytes } from "@/lib/utils";
 import {
   FolderOpen,
@@ -20,22 +23,28 @@ import {
   X,
   UploadCloud,
   HardDriveDownload,
-  CheckCircle2,
   Radio,
   Pencil,
   ArrowUpCircle,
   ArrowDownCircle,
   CloudDownload,
   Loader2,
+  CheckSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { ListSkeleton, Skeleton, Modal, Input } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useDriveAuthStatus, useDriveDownloads } from "@/hooks/useDrive";
-import { DriveAuthModal, UploadToDriveModal, ActiveDriveDownloads } from "@/components/drive";
+import {
+  DriveAuthModal,
+  UploadToDriveModal,
+  BatchUploadToDriveModal,
+  ActiveDriveDownloads,
+} from "@/components/drive";
 import toast from "react-hot-toast";
 import type { TorrentItem, DriveDownloadProgress, LocalFileItem } from "@/types";
 
-interface LocalFileEntry {
+export interface LocalFileEntry {
   name: string;
   path: string;
   size: number;
@@ -45,7 +54,7 @@ interface LocalFileEntry {
   isDriveCompleted?: boolean;
 }
 
-interface FolderNode {
+export interface FolderNode {
   name: string;
   path: string;
   isDirectory: boolean;
@@ -55,6 +64,9 @@ interface FolderNode {
   localFiles: LocalFileEntry[];
   activeDownloads?: DriveDownloadProgress[];
 }
+
+export type StatusFilter = "all" | "seeding" | "unseeded";
+export type SortOption = "name" | "size" | "date";
 
 function buildFileTree(
   torrents: TorrentItem[],
@@ -191,6 +203,87 @@ function buildFileTree(
   return root;
 }
 
+function filterAndSortTree(
+  node: FolderNode,
+  status: StatusFilter,
+  sortBy: SortOption
+): FolderNode | null {
+  // 1. Filter local files
+  let filteredLocalFiles = node.localFiles.filter((file) => {
+    const isSeeding = file.torrent && file.torrent.progress >= 100;
+    if (status === "seeding") {
+      return isSeeding;
+    }
+    if (status === "unseeded") {
+      return !isSeeding;
+    }
+    return true;
+  });
+
+  // 2. Sort local files
+  filteredLocalFiles.sort((a, b) => {
+    if (sortBy === "size") {
+      return b.size - a.size;
+    }
+    if (sortBy === "date") {
+      return (b.modified || 0) - (a.modified || 0);
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+
+  // 3. Filter and sort children folders recursively
+  const filteredChildren: FolderNode[] = [];
+  for (const child of node.children) {
+    const filteredChild = filterAndSortTree(child, status, sortBy);
+    if (filteredChild) {
+      filteredChildren.push(filteredChild);
+    }
+  }
+
+  // Sort children folders
+  filteredChildren.sort((a, b) => {
+    if (sortBy === "size") {
+      return b.size - a.size;
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+
+  // Active downloads (only show if status is "all" or "unseeded")
+  const filteredDownloads = status === "seeding" ? [] : node.activeDownloads || [];
+
+  const hasContent =
+    filteredChildren.length > 0 ||
+    filteredLocalFiles.length > 0 ||
+    filteredDownloads.length > 0;
+
+  // Root "/" always kept, subfolders kept only if they have matching items
+  if (!hasContent && node.path !== "/") {
+    return null;
+  }
+
+  const totalSize =
+    filteredLocalFiles.reduce((acc, f) => acc + (f.size || 0), 0) +
+    filteredChildren.reduce((acc, c) => acc + (c.size || 0), 0) +
+    filteredDownloads.reduce((acc, d) => acc + (d.total_bytes || 0), 0);
+
+  return {
+    ...node,
+    size: totalSize,
+    children: filteredChildren,
+    localFiles: filteredLocalFiles,
+    activeDownloads: filteredDownloads,
+  };
+}
+
+function collectAllFiles(node: FolderNode | null): LocalFileEntry[] {
+  if (!node) return [];
+  const list: LocalFileEntry[] = [...node.localFiles];
+  for (const child of node.children) {
+    list.push(...collectAllFiles(child));
+  }
+  return list;
+}
+
 interface ActionTarget {
   type: "folder" | "torrent" | "file";
   title: string;
@@ -235,16 +328,16 @@ function RenameFileModal({ open, onClose, target }: RenameFileModalProps) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="text-xs uppercase tracking-wider text-text-muted font-semibold block mb-1.5">
-            Nama Baru
+            New Name
           </label>
           <Input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Masukkan nama baru..."
+            placeholder="Enter new name..."
             autoFocus
           />
           <p className="text-xs text-text-muted font-mono mt-1.5 truncate" title={target?.path}>
-            Lokasi: {target?.path}
+            Location: {target?.path}
           </p>
         </div>
 
@@ -254,7 +347,7 @@ function RenameFileModal({ open, onClose, target }: RenameFileModalProps) {
             onClick={onClose}
             className="min-h-[42px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover transition-colors"
           >
-            Batal
+            Cancel
           </button>
           <button
             type="submit"
@@ -264,12 +357,12 @@ function RenameFileModal({ open, onClose, target }: RenameFileModalProps) {
             {renameMutation.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Menyimpan...
+                Saving...
               </>
             ) : (
               <>
                 <Pencil className="w-4 h-4" />
-                Simpan Nama
+                Save Name
               </>
             )}
           </button>
@@ -283,10 +376,16 @@ function FolderItem({
   node,
   depth = 0,
   onOpenActionMenu,
+  selectMode = false,
+  selectedPaths,
+  onToggleSelect,
 }: {
   node: FolderNode;
   depth?: number;
   onOpenActionMenu: (target: ActionTarget) => void;
+  selectMode?: boolean;
+  selectedPaths?: Set<string>;
+  onToggleSelect?: (file: LocalFileEntry) => void;
 }) {
   const [expanded, setExpanded] = useState(depth < 2);
 
@@ -334,7 +433,7 @@ function FolderItem({
                 savePath: node.path,
               })
             }
-            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover flex-shrink-0"
+            className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover flex-shrink-0"
             aria-label={`Actions for folder ${node.name}`}
           >
             <MoreVertical className="w-4 h-4" />
@@ -350,6 +449,9 @@ function FolderItem({
               node={child}
               depth={depth + 1}
               onOpenActionMenu={onOpenActionMenu}
+              selectMode={selectMode}
+              selectedPaths={selectedPaths}
+              onToggleSelect={onToggleSelect}
             />
           ))}
 
@@ -357,27 +459,29 @@ function FolderItem({
           {node.activeDownloads?.map((d) => (
             <div
               key={d.task_id}
-              className="flex items-center gap-2 pr-1 min-h-[48px] py-2 bg-sky-500/[0.04] hover:bg-sky-500/[0.08] border-l-2 border-l-sky-400 rounded-xl transition-colors my-0.5"
+              className="flex items-start gap-2.5 sm:gap-3 pr-1 min-h-[48px] py-2.5 bg-sky-500/[0.04] hover:bg-sky-500/[0.08] border-l-2 border-l-sky-400 rounded-xl transition-colors my-0.5"
               style={{ paddingLeft: `${Math.min(depth + 1, 4) * 14 + 8}px` }}
             >
               <span className="w-4 flex-shrink-0" />
-              <HardDriveDownload className="w-4 h-4 text-sky-400 flex-shrink-0 animate-bounce" />
+              <span className="mt-0.5 flex-shrink-0 flex items-center justify-center">
+                <HardDriveDownload className="w-4 h-4 text-sky-400 animate-bounce" />
+              </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-text-primary truncate font-medium">
                   {d.filename}
                 </p>
-                <p className="text-xs text-text-muted font-mono">
+                <p className="text-xs text-text-muted font-mono mt-0.5 truncate">
                   {d.total_bytes > 0 ? formatBytes(d.total_bytes) : "Unknown size"} ·{" "}
                   <span className="text-sky-400 font-semibold">
                     {d.progress_percent.toFixed(1)}%
                   </span>
                   <span className="text-[11px] text-text-muted ml-1.5">
-                    (Sedang Mengunduh dari Drive{d.speed_bytes_sec > 0 ? ` • ${formatBytes(d.speed_bytes_sec)}/s` : ""})
+                    (Downloading from Drive{d.speed_bytes_sec > 0 ? ` • ${formatBytes(d.speed_bytes_sec)}/s` : ""})
                   </span>
                 </p>
               </div>
 
-              <div className="flex items-center gap-1.5 flex-shrink-0 pr-1">
+              <div className="flex items-center gap-1.5 flex-shrink-0 pr-1 mt-0.5">
                 <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-sky-500/15 text-sky-400 border border-sky-500/20 animate-pulse">
                   {d.progress_percent >= 100 ? "100.0%" : `${d.progress_percent.toFixed(1)}%`}
                 </span>
@@ -389,25 +493,48 @@ function FolderItem({
           {node.localFiles?.map((file) => {
             const isSeeding = file.torrent && file.torrent.progress >= 100;
             const isDownloading = file.torrent && file.torrent.progress < 100;
+            const isSelected = selectedPaths?.has(file.path);
 
             return (
               <div
                 key={file.path}
-                className="flex items-center gap-2 pr-1 min-h-[52px] py-2 hover:bg-glass-hover/30 rounded-xl transition-colors"
+                onClick={() => {
+                  if (selectMode && onToggleSelect) {
+                    onToggleSelect(file);
+                  }
+                }}
+                className={`flex items-start gap-2.5 sm:gap-3 pr-1 py-2.5 hover:bg-glass-hover/30 rounded-xl transition-colors min-h-[48px] group ${
+                  selectMode ? "cursor-pointer" : ""
+                } ${isSelected ? "bg-accent/10 border border-accent/25" : ""}`}
                 style={{ paddingLeft: `${Math.min(depth + 1, 4) * 14 + 8}px` }}
               >
-                <span className="w-4 flex-shrink-0" />
-
-                {/* File Icon */}
-                {isSeeding ? (
-                  <ArrowUpCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                ) : isDownloading ? (
-                  <ArrowDownCircle className="w-4 h-4 text-sky-400 flex-shrink-0" />
-                ) : file.isDriveCompleted ? (
-                  <CloudDownload className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                {/* Select Mode Checkbox */}
+                {selectMode ? (
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onToggleSelect?.(file);
+                    }}
+                    className="mt-0.5 w-4 h-4 rounded accent-accent cursor-pointer flex-shrink-0"
+                  />
                 ) : (
-                  <File className="w-4 h-4 text-text-secondary flex-shrink-0" />
+                  <span className="w-4 flex-shrink-0" />
                 )}
+
+                {/* File Icon (Aligned with first row title) */}
+                <span className="mt-0.5 flex-shrink-0 flex items-center justify-center">
+                  {isSeeding ? (
+                    <ArrowUpCircle className="w-4 h-4 text-emerald-400" />
+                  ) : isDownloading ? (
+                    <ArrowDownCircle className="w-4 h-4 text-sky-400" />
+                  ) : file.isDriveCompleted ? (
+                    <CloudDownload className="w-4 h-4 text-purple-400" />
+                  ) : (
+                    <File className="w-4 h-4 text-text-secondary" />
+                  )}
+                </span>
 
                 {/* File Information and Badges */}
                 <div className="min-w-0 flex-1">
@@ -416,62 +543,69 @@ function FolderItem({
                       {file.name}
                     </p>
 
-                    {/* Status Badges */}
+                    {/* Concise 1-2 word Status Badges */}
                     {isSeeding ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                         <Radio className="w-2.5 h-2.5 animate-pulse" />
-                        Seeding (Torrent)
+                        Seeding
                       </span>
                     ) : isDownloading ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30">
-                        Torrent ({file.torrent!.progress.toFixed(1)}%)
+                        Downloading
                       </span>
                     ) : file.isDriveCompleted ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/30">
-                        Bukan Torrent · Dari Drive
+                        From Drive
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/10 text-text-secondary border border-glass-border">
-                        Bukan Torrent (Belum di-seed)
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/15 text-zinc-300 border border-zinc-500/30">
+                        Unseeded
                       </span>
                     )}
                   </div>
 
-                  <p className="text-xs text-text-muted font-mono mt-0.5">
-                    {formatBytes(file.size)} ·{" "}
+                  {/* Compact single-line core metadata */}
+                  <p className="text-xs text-text-muted font-mono mt-0.5 truncate">
+                    {formatBytes(file.size)}
                     {isSeeding ? (
-                      <span className="text-emerald-400 font-medium">
-                        Aktif Seeding {file.torrent?.ratio !== undefined ? `(Ratio: ${file.torrent.ratio.toFixed(2)})` : ""}
-                        {file.torrent?.upload_speed ? ` • ↑ ${formatBytes(file.torrent.upload_speed)}/s` : ""}
-                      </span>
+                      <>
+                        {" "}• Ratio {(file.torrent?.ratio ?? 0).toFixed(2)}
+                        {file.torrent?.upload_speed && file.torrent.upload_speed > 0 ? (
+                          <> • ↑ {formatBytes(file.torrent.upload_speed)}/s</>
+                        ) : null}
+                      </>
                     ) : isDownloading ? (
-                      <span className="text-sky-400 font-medium">
-                        Sedang Mengunduh ({file.torrent!.progress.toFixed(1)}%)
-                      </span>
+                      <>
+                        {" "}• {file.torrent!.progress.toFixed(1)}%
+                        {file.torrent?.download_speed && file.torrent.download_speed > 0 ? (
+                          <> • ↓ {formatBytes(file.torrent.download_speed)}/s</>
+                        ) : null}
+                      </>
                     ) : (
-                      <span className="text-amber-400/90 font-medium">
-                        Penyimpanan Lokal (Belum di-seed)
-                      </span>
+                      <> • Local Storage</>
                     )}
                   </p>
                 </div>
 
                 {/* Actions Button */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenActionMenu({
-                      type: "file",
-                      title: file.name,
-                      savePath: file.path,
-                      torrentHash: file.torrentHash || file.torrent?.hash,
-                    })
-                  }
-                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover flex-shrink-0"
-                  aria-label={`Actions for ${file.name}`}
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
+                {!selectMode && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenActionMenu({
+                        type: "file",
+                        title: file.name,
+                        savePath: file.path,
+                        torrentHash: file.torrentHash || file.torrent?.hash,
+                      });
+                    }}
+                    className="min-w-[36px] min-h-[36px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover flex-shrink-0 mt-0.5"
+                    aria-label={`Actions for ${file.name}`}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             );
           })}
@@ -486,6 +620,9 @@ export function FileBrowserPage() {
   const { data: localFilesData, isLoading: localFilesLoading } = useLocalFiles();
   const { data: driveDownloads } = useDriveDownloads();
   const deleteLocalFileMutation = useDeleteLocalFile();
+  const api = useApi();
+  const instance = useActiveInstance();
+  const qc = useQueryClient();
 
   const searchQuery = useAppStore((s) => s.searchQuery);
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
@@ -493,17 +630,31 @@ export function FileBrowserPage() {
     (s) => s.openAddTorrentWithPrefill
   );
   const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
+
+  // Filter & Sort State
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("name");
+
+  // Multi-select State
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [batchDeleteModalOpen, setBatchDeleteModalOpen] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+
+  // Action Target & Modals
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [renameModalTarget, setRenameModalTarget] = useState<{ path: string; name: string } | null>(null);
   const { data: driveAuth } = useDriveAuthStatus();
   const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
   const [uploadDrivePath, setUploadDrivePath] = useState<string | null>(null);
   const [uploadTorrentHash, setUploadTorrentHash] = useState<string | null>(null);
+  const [batchUploadModalOpen, setBatchUploadModalOpen] = useState(false);
+  const [batchUploadItems, setBatchUploadItems] = useState<Array<{ filePath: string; name: string; size?: number; torrentHash?: string }>>([]);
 
   const handleUploadToDrive = (target: ActionTarget) => {
     setActionTarget(null);
     if (!driveAuth?.authenticated) {
-      toast("Silakan hubungkan Google Drive terlebih dahulu", { icon: "🔐" });
+      toast("Please connect Google Drive first", { icon: "🔐" });
       setDriveAuthModalOpen(true);
     } else {
       setUploadDrivePath(target.savePath);
@@ -511,7 +662,7 @@ export function FileBrowserPage() {
     }
   };
 
-  const filteredTree = useMemo(() => {
+  const rawTree = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const filteredTorrents = (torrents || []).filter(
       (t) =>
@@ -543,6 +694,96 @@ export function FileBrowserPage() {
     return buildFileTree(filteredTorrents, filteredFiles, filteredDownloads);
   }, [searchQuery, torrents, localFilesData, driveDownloads]);
 
+  // Apply quick filter pills and sort order
+  const filteredTree = useMemo(() => {
+    if (!rawTree) return null;
+    return filterAndSortTree(rawTree, filterStatus, sortBy);
+  }, [rawTree, filterStatus, sortBy]);
+
+  // Collect all selectable files in the currently visible filtered tree
+  const allSelectableFiles = useMemo(() => {
+    return collectAllFiles(filteredTree);
+  }, [filteredTree]);
+
+  const allVisibleSelected =
+    allSelectableFiles.length > 0 &&
+    allSelectableFiles.every((f) => selectedPaths.has(f.path));
+
+  const toggleSelect = (file: LocalFileEntry) => {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(file.path)) {
+        next.delete(file.path);
+      } else {
+        next.add(file.path);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedPaths(new Set());
+    } else {
+      setSelectedPaths(new Set(allSelectableFiles.map((f) => f.path)));
+    }
+  };
+
+  const exitSelectMode = () => {
+    setIsSelectMode(false);
+    setSelectedPaths(new Set());
+  };
+
+  const handleBatchUploadToDrive = () => {
+    if (!driveAuth?.authenticated) {
+      toast("Please connect Google Drive first", { icon: "🔐" });
+      setDriveAuthModalOpen(true);
+      return;
+    }
+
+    const itemsToUpload = allSelectableFiles
+      .filter((f) => selectedPaths.has(f.path))
+      .map((f) => ({
+        filePath: f.path,
+        name: f.name,
+        size: f.size,
+        torrentHash: f.torrentHash || f.torrent?.hash,
+      }));
+
+    if (itemsToUpload.length === 0) return;
+    setBatchUploadItems(itemsToUpload);
+    setBatchUploadModalOpen(true);
+  };
+
+  const executeBatchDelete = async () => {
+    if (!api || selectedPaths.size === 0) return;
+    setIsBatchDeleting(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const path of selectedPaths) {
+      try {
+        await api.deleteLocalFile(path);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+
+    setIsBatchDeleting(false);
+    setBatchDeleteModalOpen(false);
+
+    if (successCount > 0) {
+      toast.success(`${successCount} file(s) deleted`);
+      qc.invalidateQueries({ queryKey: ["local-files", instance?.id] });
+    }
+    if (failCount > 0) {
+      toast.error(`Failed to delete ${failCount} file(s)`);
+    }
+
+    exitSelectMode();
+  };
+
   const copyPath = (path: string) => {
     navigator.clipboard.writeText(path);
     toast.success("Path copied");
@@ -551,30 +792,39 @@ export function FileBrowserPage() {
   const isLoading = torrentsLoading && localFilesLoading;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">File Browser</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Kelola file unduhan, bedakan file Seeding Torrent dan Local Storage, serta trigger Re-Seed langsung dari path VPS
+          Manage downloads, differentiate active seeding torrents from local storage, and trigger re-seed directly from server paths.
         </p>
       </div>
 
       {/* Active Background Downloads to VPS Card */}
       <ActiveDriveDownloads />
 
-      {/* Search (Synced with Header contextual search) */}
+      {/* Search Bar */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
         <input
           type="text"
-          placeholder="Filter files and folders..."
+          placeholder="Filter files & folders..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full min-h-[44px] pl-10 pr-4 py-2 rounded-xl text-sm bg-surface-elevated border border-glass-border text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
         />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-text-primary rounded-lg transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* Stats */}
+      {/* Stats Summary */}
       {isLoading ? (
         <Skeleton className="h-4 w-44" />
       ) : (
@@ -584,10 +834,158 @@ export function FileBrowserPage() {
             {formatBytes(filteredTree?.size || 0)} total
           </span>
           <span>
-            {(localFilesData?.files?.filter((f) => !f.is_directory).length || 0) +
-              (torrents?.length || 0)}{" "}
-            files on server
+            {allSelectableFiles.length} file{allSelectableFiles.length !== 1 ? "s" : ""} listed
           </span>
+        </div>
+      )}
+
+      {/* Top Control Bar: Select & Quick Filter Pills */}
+      {isSelectMode ? (
+        /* Active Selection Bar */
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-accent/10 border border-accent/25 text-xs w-full animate-fadeIn">
+          <label className="flex items-center gap-2 cursor-pointer select-none font-medium text-text-primary">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded accent-accent cursor-pointer"
+            />
+            <span>
+              {selectedPaths.size > 0
+                ? `${selectedPaths.size} selected`
+                : `Select All (${allSelectableFiles.length})`}
+            </span>
+          </label>
+
+          <div className="flex items-center gap-2 ml-auto">
+            {selectedPaths.size > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleBatchUploadToDrive}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-medium shadow-sm transition-colors"
+                  title="Upload selected files to Google Drive"
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Upload to Drive ({selectedPaths.size})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBatchDeleteModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-danger text-white text-xs font-medium shadow-sm hover:bg-danger/90 transition-colors"
+                  title="Delete selected files from server"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete ({selectedPaths.size})</span>
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={exitSelectMode}
+              className="px-3 py-1.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover text-xs font-medium text-text-primary transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Normal Mode Toolbar: Select Mode Button, Quick Filter Pills, Sort Options */
+        <div className="flex items-center justify-between gap-3 flex-wrap text-xs text-text-muted w-full">
+          {/* Left: Select toggle button & Status Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setIsSelectMode(true)}
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary font-medium"
+              title="Select multiple files for batch actions"
+            >
+              <CheckSquare className="w-3.5 h-3.5 text-accent" />
+              <span>Select</span>
+            </button>
+
+            <div className="h-4 w-[1px] bg-glass-border mx-0.5" />
+
+            {/* Filter Pills */}
+            <div className="inline-flex items-center p-0.5 rounded-lg bg-surface-elevated border border-glass-border">
+              <button
+                type="button"
+                onClick={() => setFilterStatus("all")}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  filterStatus === "all"
+                    ? "bg-accent text-white shadow-sm"
+                    : "text-text-secondary hover:text-text-primary"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("seeding")}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  filterStatus === "seeding"
+                    ? "bg-emerald-500 text-white shadow-sm"
+                    : "text-text-secondary hover:text-emerald-400"
+                }`}
+              >
+                Seeding
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("unseeded")}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  filterStatus === "unseeded"
+                    ? "bg-amber-500 text-white shadow-sm"
+                    : "text-text-secondary hover:text-amber-400"
+                }`}
+              >
+                Unseeded
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Sort Options */}
+          <div className="flex items-center gap-1.5 ml-auto">
+            <span className="text-[11px] text-text-muted mr-1 hidden sm:inline">Sort:</span>
+            <div className="inline-flex items-center p-0.5 rounded-lg bg-surface-elevated border border-glass-border">
+              <button
+                type="button"
+                onClick={() => setSortBy("name")}
+                className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+                  sortBy === "name"
+                    ? "bg-surface-overlay text-text-primary shadow-sm font-semibold"
+                    : "text-text-secondary hover:text-text-primary"
+                }`}
+                title="Sort alphabetically"
+              >
+                Name
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy("size")}
+                className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+                  sortBy === "size"
+                    ? "bg-surface-overlay text-text-primary shadow-sm font-semibold"
+                    : "text-text-secondary hover:text-text-primary"
+                }`}
+                title="Sort by size (largest first)"
+              >
+                Size
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy("date")}
+                className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+                  sortBy === "date"
+                    ? "bg-surface-overlay text-text-primary shadow-sm font-semibold"
+                    : "text-text-secondary hover:text-text-primary"
+                }`}
+                title="Sort by date modified (newest first)"
+              >
+                Date
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -604,12 +1002,15 @@ export function FileBrowserPage() {
                 key={child.path}
                 node={child}
                 onOpenActionMenu={setActionTarget}
+                selectMode={isSelectMode}
+                selectedPaths={selectedPaths}
+                onToggleSelect={toggleSelect}
               />
             ))
           ) : (
             <div className="p-12 text-center">
               <FolderOpen className="w-12 h-12 mx-auto mb-3 text-text-muted opacity-30" />
-              <p className="text-text-secondary">No files found</p>
+              <p className="text-text-secondary">No files found matching criteria</p>
             </div>
           )}
         </div>
@@ -665,7 +1066,7 @@ export function FileBrowserPage() {
               className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover transition-colors"
             >
               <Pencil className="w-5 h-5 text-accent" />
-              Ganti Nama (Rename)
+              Rename
             </button>
 
             {/* Seed with Torrent / Magnet */}
@@ -733,7 +1134,7 @@ export function FileBrowserPage() {
                   onClick={() => {
                     const path = actionTarget.savePath;
                     setActionTarget(null);
-                    if (window.confirm(`Hapus file lokal "${actionTarget.title}"?`)) {
+                    if (window.confirm(`Delete local file "${actionTarget.title}" from server?`)) {
                       deleteLocalFileMutation.mutate(path);
                     }
                   }}
@@ -748,6 +1149,54 @@ export function FileBrowserPage() {
         </div>
       )}
 
+      {/* Batch Delete Confirmation Modal */}
+      {batchDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => !isBatchDeleting && setBatchDeleteModalOpen(false)}
+          />
+          <div className="relative w-full max-w-sm glass bg-surface-overlay border border-glass-border rounded-2xl p-5 space-y-4 shadow-2xl z-10">
+            <div className="flex items-center gap-3 text-danger">
+              <div className="w-9 h-9 rounded-xl bg-danger/15 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-danger" />
+              </div>
+              <h3 className="text-base font-semibold text-text-primary">
+                Delete {selectedPaths.size} File(s)
+              </h3>
+            </div>
+            <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
+              Are you sure you want to delete {selectedPaths.size} selected file(s) from local server storage? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isBatchDeleting}
+                onClick={() => setBatchDeleteModalOpen(false)}
+                className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeBatchDelete}
+                disabled={isBatchDeleting}
+                className="min-h-[38px] px-4 rounded-xl text-sm font-medium bg-danger hover:bg-danger/80 text-white disabled:opacity-50 transition-colors flex items-center gap-2"
+              >
+                {isBatchDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Delete ({selectedPaths.size})</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rename File / Folder Modal */}
       <RenameFileModal
         open={!!renameModalTarget}
@@ -755,11 +1204,13 @@ export function FileBrowserPage() {
         target={renameModalTarget}
       />
 
+      {/* Google Drive Auth Modal */}
       <DriveAuthModal
         open={driveAuthModalOpen}
         onClose={() => setDriveAuthModalOpen(false)}
       />
 
+      {/* Single Upload to Drive Modal */}
       {uploadDrivePath && (
         <UploadToDriveModal
           open={!!uploadDrivePath}
@@ -769,6 +1220,21 @@ export function FileBrowserPage() {
           }}
           filePath={uploadDrivePath}
           torrentHash={uploadTorrentHash || undefined}
+        />
+      )}
+
+      {/* Batch Upload to Drive Modal */}
+      {batchUploadModalOpen && (
+        <BatchUploadToDriveModal
+          open={batchUploadModalOpen}
+          onClose={() => {
+            setBatchUploadModalOpen(false);
+            setBatchUploadItems([]);
+          }}
+          items={batchUploadItems}
+          onSuccess={() => {
+            exitSelectMode();
+          }}
         />
       )}
     </div>
