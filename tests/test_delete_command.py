@@ -134,7 +134,7 @@ def test_build_delete_menu_data(tmp_path, monkeypatch):
     (base / "my_folder").mkdir()
 
     text, markup = build_delete_menu_data(12345, current_dir=str(base))
-    assert "Hapus File atau Folder" in text
+    assert "Pilih File atau Folder" in text
     assert markup is not None
     # Check buttons 1, 2, 3 exist
     button_texts = [btn.text for row in markup.inline_keyboard for btn in row]
