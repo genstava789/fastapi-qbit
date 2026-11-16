@@ -31,6 +31,7 @@ import {
   CheckSquare,
   AlertTriangle,
   Search,
+  ArrowUpDown,
 } from "lucide-react";
 import { ListSkeleton, Skeleton, Modal, Input } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
@@ -59,6 +60,7 @@ export interface FolderNode {
   path: string;
   isDirectory: boolean;
   size: number;
+  modified?: number;
   children: FolderNode[];
   torrents: TorrentItem[];
   localFiles: LocalFileEntry[];
@@ -67,6 +69,13 @@ export interface FolderNode {
 
 export type StatusFilter = "all" | "seeding" | "unseeded";
 export type SortOption = "name" | "size" | "date";
+export type SortDir = "asc" | "desc";
+
+const sortLabels: Record<SortOption, string> = {
+  name: "Name",
+  size: "Size",
+  date: "Date",
+};
 
 function buildFileTree(
   torrents: TorrentItem[],
@@ -84,7 +93,7 @@ function buildFileTree(
     activeDownloads: [],
   };
 
-  const getOrCreatePathNode = (rawPath: string) => {
+  const getOrCreatePathNode = (rawPath: string, modified?: number) => {
     const normalized = rawPath.replace(/\\/g, "/");
     const parts = normalized.split("/").filter(Boolean);
     let current = root;
@@ -99,12 +108,15 @@ function buildFileTree(
           path: currentPath,
           isDirectory: true,
           size: 0,
+          modified: modified,
           children: [],
           torrents: [],
           localFiles: [],
           activeDownloads: [],
         };
         current.children.push(child);
+      } else if (modified && (!child.modified || modified > child.modified)) {
+        child.modified = modified;
       }
       current = child;
     }
@@ -128,7 +140,7 @@ function buildFileTree(
   // 1. Files from server local disk (including completed Drive downloads on disk)
   for (const f of localFiles) {
     if (f.is_directory) {
-      getOrCreatePathNode(f.path);
+      getOrCreatePathNode(f.path, f.modified);
     } else {
       const targetFolder = getOrCreatePathNode(f.parent_path);
       const matchingTorrent = torrents.find(
@@ -206,8 +218,11 @@ function buildFileTree(
 function filterAndSortTree(
   node: FolderNode,
   status: StatusFilter,
-  sortBy: SortOption
+  sortBy: SortOption,
+  sortDir: SortDir = "asc"
 ): FolderNode | null {
+  const multiplier = sortDir === "asc" ? 1 : -1;
+
   // 1. Filter local files
   let filteredLocalFiles = node.localFiles.filter((file) => {
     const isSeeding = file.torrent && file.torrent.progress >= 100;
@@ -222,19 +237,22 @@ function filterAndSortTree(
 
   // 2. Sort local files
   filteredLocalFiles.sort((a, b) => {
+    if (sortBy === "name") {
+      return multiplier * a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    }
     if (sortBy === "size") {
-      return b.size - a.size;
+      return multiplier * (a.size - b.size);
     }
     if (sortBy === "date") {
-      return (b.modified || 0) - (a.modified || 0);
+      return multiplier * ((a.modified || 0) - (b.modified || 0));
     }
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    return 0;
   });
 
   // 3. Filter and sort children folders recursively
   const filteredChildren: FolderNode[] = [];
   for (const child of node.children) {
-    const filteredChild = filterAndSortTree(child, status, sortBy);
+    const filteredChild = filterAndSortTree(child, status, sortBy, sortDir);
     if (filteredChild) {
       filteredChildren.push(filteredChild);
     }
@@ -242,10 +260,16 @@ function filterAndSortTree(
 
   // Sort children folders
   filteredChildren.sort((a, b) => {
-    if (sortBy === "size") {
-      return b.size - a.size;
+    if (sortBy === "name") {
+      return multiplier * a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
     }
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    if (sortBy === "size") {
+      return multiplier * (a.size - b.size);
+    }
+    if (sortBy === "date") {
+      return multiplier * ((a.modified || 0) - (b.modified || 0));
+    }
+    return multiplier * a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
   });
 
   // Active downloads (only show if status is "all" or "unseeded")
@@ -423,12 +447,31 @@ export function FileBrowserPage() {
   // Filter & Sort State
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
   const [sortBy, setSortBy] = useState<SortOption>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [showSortMenu, setShowSortMenu] = useState(false);
+
+  const setSorting = (option: SortOption) => {
+    if (sortBy === option) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(option);
+      setSortDir("asc");
+    }
+    setShowSortMenu(false);
+  };
 
   // Multi-select State
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [batchDeleteModalOpen, setBatchDeleteModalOpen] = useState(false);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+
+  // Single Item Delete Modal (for folder or file)
+  const [itemToDelete, setItemToDelete] = useState<{
+    type: "folder" | "file";
+    name: string;
+    path: string;
+  } | null>(null);
 
   // Action Target & Modals
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
@@ -486,8 +529,8 @@ export function FileBrowserPage() {
   // Apply quick filter pills and sort order
   const filteredTree = useMemo(() => {
     if (!rawTree) return null;
-    return filterAndSortTree(rawTree, filterStatus, sortBy);
-  }, [rawTree, filterStatus, sortBy]);
+    return filterAndSortTree(rawTree, filterStatus, sortBy, sortDir);
+  }, [rawTree, filterStatus, sortBy, sortDir]);
 
   // Resolve directory node based on currentPath (or fallback to /downloads or root)
   const currentNode = useMemo(() => {
@@ -523,17 +566,35 @@ export function FileBrowserPage() {
     return currentNode?.localFiles || [];
   }, [isSearching, allFilteredFiles, currentNode]);
 
-  const allVisibleSelected =
-    visibleFiles.length > 0 &&
-    visibleFiles.every((f) => selectedPaths.has(f.path));
+  // All selectable items in the current view (files and folders)
+  const currentViewItems = useMemo(() => {
+    if (isSearching) {
+      return visibleFiles.map((f) => ({ path: f.path, name: f.name, isDirectory: false }));
+    }
+    const folders = (currentNode?.children || []).map((f) => ({
+      path: f.path,
+      name: f.name,
+      isDirectory: true,
+    }));
+    const files = (currentNode?.localFiles || []).map((f) => ({
+      path: f.path,
+      name: f.name,
+      isDirectory: false,
+    }));
+    return [...folders, ...files];
+  }, [isSearching, visibleFiles, currentNode]);
 
-  const toggleSelect = (file: LocalFileEntry) => {
+  const allVisibleSelected =
+    currentViewItems.length > 0 &&
+    currentViewItems.every((item) => selectedPaths.has(item.path));
+
+  const toggleSelectPath = (path: string) => {
     setSelectedPaths((prev) => {
       const next = new Set(prev);
-      if (next.has(file.path)) {
-        next.delete(file.path);
+      if (next.has(path)) {
+        next.delete(path);
       } else {
-        next.add(file.path);
+        next.add(path);
       }
       return next;
     });
@@ -543,13 +604,26 @@ export function FileBrowserPage() {
     if (allVisibleSelected) {
       setSelectedPaths(new Set());
     } else {
-      setSelectedPaths(new Set(visibleFiles.map((f) => f.path)));
+      setSelectedPaths(new Set(currentViewItems.map((item) => item.path)));
     }
   };
 
   const exitSelectMode = () => {
     setIsSelectMode(false);
     setSelectedPaths(new Set());
+  };
+
+  const handleConfirmDeleteSingle = () => {
+    if (!itemToDelete) return;
+    deleteLocalFileMutation.mutate(itemToDelete.path, {
+      onSuccess: () => {
+        if (currentPath === itemToDelete.path || currentPath.startsWith(itemToDelete.path + "/")) {
+          const parent = itemToDelete.path.substring(0, itemToDelete.path.lastIndexOf("/")) || "/";
+          setCurrentPath(parent);
+        }
+        setItemToDelete(null);
+      },
+    });
   };
 
   const handleGoUp = () => {
@@ -574,8 +648,17 @@ export function FileBrowserPage() {
         torrentHash: f.torrentHash || f.torrent?.hash,
       }));
 
-    if (itemsToUpload.length === 0) return;
-    setBatchUploadItems(itemsToUpload);
+    const selectedFolders = (currentNode?.children || [])
+      .filter((f) => selectedPaths.has(f.path))
+      .map((f) => ({
+        filePath: f.path,
+        name: f.name,
+        size: f.size,
+      }));
+
+    const allItemsToUpload = [...itemsToUpload, ...selectedFolders];
+    if (allItemsToUpload.length === 0) return;
+    setBatchUploadItems(allItemsToUpload);
     setBatchUploadModalOpen(true);
   };
 
@@ -597,6 +680,10 @@ export function FileBrowserPage() {
     const nonTorrentPaths = selectedFileEntries
       .filter((f) => !f.torrentHash && !f.torrent?.hash)
       .map((f) => f.path);
+
+    const remainingFolderPaths = Array.from(selectedPaths).filter(
+      (path) => !selectedFileEntries.some((f) => f.path === path)
+    );
 
     let successCount = 0;
     let failCount = 0;
@@ -621,16 +708,32 @@ export function FileBrowserPage() {
       }
     }
 
+    // Delete selected folders
+    for (const folderPath of remainingFolderPaths) {
+      try {
+        await api.deleteLocalFile(folderPath);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+
     setIsBatchDeleting(false);
     setBatchDeleteModalOpen(false);
 
     if (successCount > 0) {
-      toast.success(`${successCount} file(s) deleted`);
+      toast.success(`${successCount} item(s) deleted`);
       qc.invalidateQueries({ queryKey: ["local-files", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["server-paths", instance?.id] });
       qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
     }
     if (failCount > 0) {
-      toast.error(`Failed to delete ${failCount} file(s)`);
+      toast.error(`Failed to delete ${failCount} item(s)`);
+    }
+
+    if (Array.from(selectedPaths).some((p) => currentPath === p || currentPath.startsWith(p + "/"))) {
+      const parent = currentPath.substring(0, currentPath.lastIndexOf("/")) || "/";
+      setCurrentPath(parent);
     }
 
     exitSelectMode();
@@ -670,7 +773,7 @@ export function FileBrowserPage() {
         </div>
       )}
 
-      {/* ── UNIFIED TOOLBAR: Select Button, Filter Pills & Sort Options All In ONE Contiguous Container ── */}
+      {/* ── TOOLBAR: Separate Select Button, Status Filters & Drive-Style Sort Dropdown ── */}
       {isSelectMode ? (
         /* Active Selection Bar: Sleek, compact & responsive */
         <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-accent/10 border border-accent/25 text-xs w-full animate-fadeIn overflow-x-auto no-scrollbar">
@@ -684,7 +787,7 @@ export function FileBrowserPage() {
             <span className="text-xs">
               {selectedPaths.size > 0
                 ? `${selectedPaths.size} selected`
-                : `Select All (${visibleFiles.length})`}
+                : `Select All (${currentViewItems.length})`}
             </span>
           </label>
 
@@ -695,7 +798,7 @@ export function FileBrowserPage() {
                   type="button"
                   onClick={handleBatchUploadToDrive}
                   className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium shadow-sm transition-colors flex-shrink-0"
-                  title="Upload selected files to Google Drive"
+                  title="Upload selected items to Google Drive"
                 >
                   <UploadCloud className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="hidden sm:inline">Upload to Drive</span>
@@ -706,7 +809,7 @@ export function FileBrowserPage() {
                   type="button"
                   onClick={() => setBatchDeleteModalOpen(true)}
                   className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-medium shadow-sm transition-colors flex-shrink-0"
-                  title="Delete selected files from server"
+                  title="Delete selected items from server"
                 >
                   <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
                   <span>Delete ({selectedPaths.size})</span>
@@ -723,102 +826,113 @@ export function FileBrowserPage() {
           </div>
         </div>
       ) : (
-        /* Normal Mode: ONE Unified Bar holding Select, Status Filters, and Sort Options seamlessly */
-        <div className="flex items-center w-full overflow-x-auto no-scrollbar py-0.5">
-          <div className="inline-flex items-center gap-0.5 sm:gap-1 p-1 rounded-xl bg-surface-elevated/80 border border-glass-border text-xs text-text-muted flex-nowrap flex-shrink-0">
-            {/* Select Button */}
+        /* Normal Mode: Separated Select Button, Filter Pills & Sort Dropdown */
+        <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs text-text-muted w-full">
+          {/* Left: Standalone Select Button & Status Filters */}
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={() => setIsSelectMode(true)}
-              className="flex items-center gap-1.5 h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-glass-hover transition-colors font-medium flex-shrink-0 text-xs"
-              title="Select multiple files for batch actions"
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium flex-shrink-0"
+              title="Select multiple files & folders"
             >
               <CheckSquare className="w-3.5 h-3.5 text-accent" />
               <span>Select</span>
             </button>
 
-            <div className="h-4 w-[1px] bg-glass-border flex-shrink-0 mx-0.5" />
-
             {/* Status Filter Pills: All | Seeding | Unseeded */}
-            <button
-              type="button"
-              onClick={() => setFilterStatus("all")}
-              className={cn(
-                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
-                filterStatus === "all"
-                  ? "bg-accent text-white shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
-              )}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus("seeding")}
-              className={cn(
-                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
-                filterStatus === "seeding"
-                  ? "bg-emerald-500 text-white shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-emerald-400 hover:bg-glass-hover"
-              )}
-            >
-              Seeding
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterStatus("unseeded")}
-              className={cn(
-                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
-                filterStatus === "unseeded"
-                  ? "bg-amber-500 text-white shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-amber-400 hover:bg-glass-hover"
-              )}
-            >
-              Unseeded
-            </button>
+            <div className="inline-flex items-center gap-0.5 sm:gap-1 p-0.5 sm:p-1 rounded-xl bg-surface-elevated/80 border border-glass-border flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setFilterStatus("all")}
+                className={cn(
+                  "h-7 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
+                  filterStatus === "all"
+                    ? "bg-accent text-white shadow-sm font-semibold"
+                    : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
+                )}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("seeding")}
+                className={cn(
+                  "h-7 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
+                  filterStatus === "seeding"
+                    ? "bg-emerald-500 text-white shadow-sm font-semibold"
+                    : "text-text-secondary hover:text-emerald-400 hover:bg-glass-hover"
+                )}
+              >
+                Seeding
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("unseeded")}
+                className={cn(
+                  "h-7 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
+                  filterStatus === "unseeded"
+                    ? "bg-amber-500 text-white shadow-sm font-semibold"
+                    : "text-text-secondary hover:text-amber-400 hover:bg-glass-hover"
+                )}
+              >
+                Unseeded
+              </button>
+            </div>
 
-            <div className="h-4 w-[1px] bg-glass-border flex-shrink-0 mx-0.5" />
+            <span className="text-[11px] text-text-muted hidden sm:inline">
+              {currentViewItems.length} {currentViewItems.length === 1 ? "item" : "items"}
+            </span>
+          </div>
 
-            {/* Sort Options: Name | Size | Date */}
-            <button
-              type="button"
-              onClick={() => setSortBy("name")}
-              className={cn(
-                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
-                sortBy === "name"
-                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold border border-glass-border/40"
-                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
+          {/* Right: Drive-Style Sort Dropdown Menu */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSortMenu(!showSortMenu)}
+                className="flex items-center gap-1 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary text-[11px] sm:text-xs font-medium"
+                title="Sort files & folders"
+              >
+                <ArrowUpDown className="w-3 h-3 text-text-muted" />
+                <span>{sortLabels[sortBy]}</span>
+                <span className="text-[10px] text-accent font-bold">
+                  {sortDir === "asc" ? "↑" : "↓"}
+                </span>
+              </button>
+
+              {showSortMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowSortMenu(false)} />
+                  <div className="absolute right-0 top-9 z-50 min-w-[150px] bg-surface-overlay border border-glass-border rounded-xl shadow-2xl py-1 text-xs animate-fadeIn">
+                    {(
+                      [
+                        ["name", "Name"],
+                        ["size", "Size"],
+                        ["date", "Date"],
+                      ] as [SortOption, string][]
+                    ).map(([opt, label]) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setSorting(opt)}
+                        className={cn(
+                          "w-full px-3 py-2 text-left hover:bg-glass-hover transition-colors flex items-center justify-between",
+                          sortBy === opt ? "text-accent font-semibold bg-accent/5" : "text-text-secondary"
+                        )}
+                      >
+                        <span>{label}</span>
+                        {sortBy === opt && (
+                          <span className="text-[10px] text-accent font-bold">
+                            {sortDir === "asc" ? "A-Z / Min" : "Z-A / Max"}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
-              title="Sort alphabetically"
-            >
-              Name
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortBy("size")}
-              className={cn(
-                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
-                sortBy === "size"
-                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold border border-glass-border/40"
-                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
-              )}
-              title="Sort by size (largest first)"
-            >
-              Size
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortBy("date")}
-              className={cn(
-                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
-                sortBy === "date"
-                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold border border-glass-border/40"
-                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
-              )}
-              title="Sort by date modified (newest first)"
-            >
-              Date
-            </button>
+            </div>
           </div>
         </div>
       )}
@@ -868,6 +982,24 @@ export function FileBrowserPage() {
               );
             })}
           </div>
+
+          {effectivePath !== "/" && currentNode && (
+            <button
+              type="button"
+              onClick={() => {
+                setActionTarget({
+                  type: "folder",
+                  title: currentNode.name,
+                  savePath: currentNode.path,
+                });
+              }}
+              className="min-w-[30px] h-[30px] flex items-center justify-center rounded-lg bg-surface-elevated border border-glass-border text-text-secondary hover:text-text-primary hover:bg-glass-hover transition-colors flex-shrink-0"
+              title={`Folder options for ${currentNode.name}`}
+              aria-label="Folder options"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
 
@@ -917,7 +1049,7 @@ export function FileBrowserPage() {
                 <div
                   key={file.path}
                   onClick={() => {
-                    if (isSelectMode) toggleSelect(file);
+                    if (isSelectMode) toggleSelectPath(file.path);
                   }}
                   className={cn(
                     "flex items-start justify-between gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5 min-h-[48px] transition-colors group",
@@ -934,7 +1066,7 @@ export function FileBrowserPage() {
                         checked={isSelected}
                         onChange={(e) => {
                           e.stopPropagation();
-                          toggleSelect(file);
+                          toggleSelectPath(file.path);
                         }}
                         onClick={(e) => e.stopPropagation()}
                         className="mt-0.5 w-4 h-4 rounded accent-accent cursor-pointer flex-shrink-0"
@@ -1069,46 +1201,72 @@ export function FileBrowserPage() {
           ))}
 
           {/* Subfolders in current directory */}
-          {currentNode?.children?.map((folder) => (
-            <div
-              key={folder.path}
-              onClick={() => {
-                setCurrentPath(folder.path);
-              }}
-              className="flex items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5 min-h-[48px] transition-colors group cursor-pointer hover:bg-glass-hover/60 border-l-2 border-l-transparent"
-            >
-              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                <FolderOpen className="w-5 h-5 text-amber-400 flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs sm:text-sm font-medium text-text-primary break-words [overflow-wrap:anywhere] line-clamp-2 leading-snug group-hover:text-accent transition-colors">
-                    {folder.name}
-                  </p>
-                  <p className="text-[11px] text-text-muted leading-tight mt-0.5">
-                    Folder · {formatBytes(folder.size)} · {folder.children.length + folder.localFiles.length} item{folder.children.length + folder.localFiles.length !== 1 ? "s" : ""}
-                  </p>
+          {currentNode?.children?.map((folder) => {
+            const isFolderSelected = selectedPaths.has(folder.path);
+            return (
+              <div
+                key={folder.path}
+                onClick={() => {
+                  if (isSelectMode) {
+                    toggleSelectPath(folder.path);
+                  } else {
+                    setCurrentPath(folder.path);
+                  }
+                }}
+                className={cn(
+                  "flex items-center justify-between gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5 min-h-[48px] transition-colors group cursor-pointer",
+                  isFolderSelected
+                    ? "bg-accent/15 border-l-2 border-l-accent"
+                    : "hover:bg-glass-hover/60 border-l-2 border-l-transparent"
+                )}
+              >
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                  {isSelectMode && (
+                    <input
+                      type="checkbox"
+                      checked={isFolderSelected}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        toggleSelectPath(folder.path);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded accent-accent cursor-pointer flex-shrink-0"
+                    />
+                  )}
+                  <FolderOpen className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs sm:text-sm font-medium text-text-primary break-words [overflow-wrap:anywhere] line-clamp-2 leading-snug group-hover:text-accent transition-colors">
+                      {folder.name}
+                    </p>
+                    <p className="text-[11px] text-text-muted leading-tight mt-0.5">
+                      Folder · {formatBytes(folder.size)} · {folder.children.length + folder.localFiles.length} item{folder.children.length + folder.localFiles.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActionTarget({
-                      type: "folder",
-                      title: folder.name,
-                      savePath: folder.path,
-                    });
-                  }}
-                  className="min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors flex-shrink-0"
-                  aria-label={`Actions for folder ${folder.name}`}
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
-                <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-text-primary transition-colors" />
+                {!isSelectMode && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActionTarget({
+                          type: "folder",
+                          title: folder.name,
+                          savePath: folder.path,
+                        });
+                      }}
+                      className="min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-glass-hover transition-colors flex-shrink-0"
+                      aria-label={`Actions for folder ${folder.name}`}
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                    <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-text-primary transition-colors" />
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Files in current directory */}
           {currentNode?.localFiles?.map((file) => {
@@ -1120,7 +1278,7 @@ export function FileBrowserPage() {
               <div
                 key={file.path}
                 onClick={() => {
-                  if (isSelectMode) toggleSelect(file);
+                  if (isSelectMode) toggleSelectPath(file.path);
                 }}
                 className={cn(
                   "flex items-start justify-between gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5 min-h-[48px] transition-colors group",
@@ -1137,7 +1295,7 @@ export function FileBrowserPage() {
                       checked={isSelected}
                       onChange={(e) => {
                         e.stopPropagation();
-                        toggleSelect(file);
+                        toggleSelectPath(file.path);
                       }}
                       onClick={(e) => e.stopPropagation()}
                       className="mt-0.5 w-4 h-4 rounded accent-accent cursor-pointer flex-shrink-0"
@@ -1358,16 +1516,37 @@ export function FileBrowserPage() {
                   Delete Torrent
                 </button>
               </div>
+            ) : actionTarget.type === "folder" ? (
+              <div className="pt-2 border-t border-glass-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = {
+                      type: "folder" as const,
+                      name: actionTarget.title,
+                      path: actionTarget.savePath,
+                    };
+                    setActionTarget(null);
+                    setItemToDelete(target);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-danger hover:bg-danger/10 transition-colors"
+                >
+                  <Trash2 className="w-5 h-5" />
+                  Delete Folder
+                </button>
+              </div>
             ) : actionTarget.type === "file" ? (
               <div className="pt-2 border-t border-glass-border">
                 <button
                   type="button"
                   onClick={() => {
-                    const path = actionTarget.savePath;
+                    const target = {
+                      type: "file" as const,
+                      name: actionTarget.title,
+                      path: actionTarget.savePath,
+                    };
                     setActionTarget(null);
-                    if (window.confirm(`Delete local file "${actionTarget.title}" from server?`)) {
-                      deleteLocalFileMutation.mutate(path);
-                    }
+                    setItemToDelete(target);
                   }}
                   className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-danger hover:bg-danger/10 transition-colors"
                 >
@@ -1376,6 +1555,59 @@ export function FileBrowserPage() {
                 </button>
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* ── Single Delete Confirmation Modal (Folder or File) ── */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => !deleteLocalFileMutation.isPending && setItemToDelete(null)}
+          />
+          <div className="relative w-full max-w-sm glass bg-surface-overlay border border-glass-border rounded-2xl p-5 space-y-4 shadow-2xl z-10 animate-fadeIn">
+            <div className="flex items-center gap-3 text-danger">
+              <div className="w-9 h-9 rounded-xl bg-danger/15 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-danger" />
+              </div>
+              <h3 className="text-base font-semibold text-text-primary">
+                Delete {itemToDelete.type === "folder" ? "Folder" : "File"}
+              </h3>
+            </div>
+            <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
+              Are you sure you want to permanently delete{" "}
+              <span className="font-semibold text-text-primary break-all">
+                &ldquo;{itemToDelete.name}&rdquo;
+              </span>
+              {itemToDelete.type === "folder" ? " and all its contents" : ""}{" "}
+              from the server storage? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deleteLocalFileMutation.isPending}
+                onClick={() => setItemToDelete(null)}
+                className="min-h-[38px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSingle}
+                disabled={deleteLocalFileMutation.isPending}
+                className="min-h-[38px] px-4 rounded-xl text-sm font-medium bg-danger hover:bg-danger/80 text-white disabled:opacity-50 transition-colors flex items-center gap-2"
+              >
+                {deleteLocalFileMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Delete</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1393,11 +1625,11 @@ export function FileBrowserPage() {
                 <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
               <h3 className="text-base font-semibold text-text-primary">
-                Delete {selectedPaths.size} File(s)
+                Delete {selectedPaths.size} Item(s)
               </h3>
             </div>
             <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
-              Are you sure you want to delete {selectedPaths.size} selected file(s) from local server storage? This action cannot be undone.
+              Are you sure you want to delete {selectedPaths.size} selected item(s) (files &amp; folders) from local server storage? This action cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
