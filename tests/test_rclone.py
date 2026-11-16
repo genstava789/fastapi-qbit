@@ -152,7 +152,9 @@ async def test_bot_run_shell_rclone_injection(monkeypatch, tmp_path):
             pass
 
     msg = MockMessage()
-    await run_shell(None, msg)
+    task = await run_shell(None, msg)
+    if task:
+        await task
 
     assert len(executed_commands) == 1
     assert f'rclone --config "{conf_file}" listremotes' == executed_commands[0]
@@ -166,6 +168,7 @@ async def test_rclone_api_endpoints(monkeypatch, tmp_path):
 
     test_conf_path = str(tmp_path / "api_rclone.conf")
     monkeypatch.setattr(rclone_service, "get_config_path", lambda: test_conf_path)
+    monkeypatch.setattr(os.path, "expanduser", lambda p: str(tmp_path / "nonexistent"))
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

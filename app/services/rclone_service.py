@@ -182,7 +182,7 @@ class RcloneService:
                 stat = os.stat(path)
                 remotes, remotes_detail = parse_rclone_remotes(content)
                 return RcloneConfigResponse(
-                    configured=bool(remotes or len(content.strip()) > 0),
+                    configured=bool(remotes),
                     file_path=path,
                     file_size=stat.st_size,
                     modified_at=stat.st_mtime,
