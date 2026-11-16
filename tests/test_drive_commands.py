@@ -87,7 +87,7 @@ def test_build_upload_menu_authenticated(tmp_path, monkeypatch):
     (base / "folder1").mkdir()
 
     text, markup = build_upload_menu_data(12345, current_dir=str(base))
-    assert "Upload ke Google Drive" in text
+    assert "Di-upload ke Google Drive" in text
     assert "Test Backup" in text
     assert markup is not None
     # Check that numbered buttons 1, 2, 3 exist
@@ -138,7 +138,7 @@ def test_build_copy_menu_authenticated(monkeypatch):
     monkeypatch.setattr(gdrive_service, "list_files", lambda **kwargs: {"files": mock_files})
 
     text, markup = build_copy_menu_data(12345, folder_id="root", folder_name="My Drive")
-    assert "Copy dari Google Drive ke Server" in text
+    assert "Di-copy ke Server" in text
     assert markup is not None
     button_texts = [btn.text for row in markup.inline_keyboard for btn in row]
     assert "1" in button_texts
