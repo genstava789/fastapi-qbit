@@ -670,7 +670,7 @@ export function FileBrowserPage() {
         </div>
       )}
 
-      {/* ── UNIFIED TOOLBAR: Select Button, Filter Pills & Sort Options All In ONE Contiguous Row ── */}
+      {/* ── UNIFIED TOOLBAR: Select Button, Filter Pills & Sort Options All In ONE Contiguous Container ── */}
       {isSelectMode ? (
         /* Active Selection Bar: Sleek, compact & responsive */
         <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-accent/10 border border-accent/25 text-xs w-full animate-fadeIn overflow-x-auto no-scrollbar">
@@ -723,70 +723,72 @@ export function FileBrowserPage() {
           </div>
         </div>
       ) : (
-        /* Normal Mode: Select, Status Filters, and Sort Options sitting together side-by-side */
-        <div className="flex items-center gap-2 text-xs text-text-muted w-full overflow-x-auto no-scrollbar flex-nowrap py-1">
-          {/* Select Button */}
-          <button
-            type="button"
-            onClick={() => setIsSelectMode(true)}
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-surface-elevated border border-glass-border hover:bg-glass-hover transition-colors text-text-secondary hover:text-text-primary font-medium flex-shrink-0"
-            title="Select multiple files for batch actions"
-          >
-            <CheckSquare className="w-3.5 h-3.5 text-accent" />
-            <span>Select</span>
-          </button>
+        /* Normal Mode: ONE Unified Bar holding Select, Status Filters, and Sort Options seamlessly */
+        <div className="flex items-center w-full overflow-x-auto no-scrollbar py-0.5">
+          <div className="inline-flex items-center gap-0.5 sm:gap-1 p-1 rounded-xl bg-surface-elevated/80 border border-glass-border text-xs text-text-muted flex-nowrap flex-shrink-0">
+            {/* Select Button */}
+            <button
+              type="button"
+              onClick={() => setIsSelectMode(true)}
+              className="flex items-center gap-1.5 h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-glass-hover transition-colors font-medium flex-shrink-0 text-xs"
+              title="Select multiple files for batch actions"
+            >
+              <CheckSquare className="w-3.5 h-3.5 text-accent" />
+              <span>Select</span>
+            </button>
 
-          <div className="h-4 w-[1px] bg-glass-border flex-shrink-0" />
+            <div className="h-4 w-[1px] bg-glass-border flex-shrink-0 mx-0.5" />
 
-          {/* Status Filter Pills: All | Seeding | Unseeded */}
-          <div className="inline-flex items-center p-0.5 rounded-lg bg-surface-elevated border border-glass-border flex-shrink-0">
+            {/* Status Filter Pills: All | Seeding | Unseeded */}
             <button
               type="button"
               onClick={() => setFilterStatus("all")}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={cn(
+                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
                 filterStatus === "all"
                   ? "bg-accent text-white shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
+                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
+              )}
             >
               All
             </button>
             <button
               type="button"
               onClick={() => setFilterStatus("seeding")}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={cn(
+                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
                 filterStatus === "seeding"
                   ? "bg-emerald-500 text-white shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-emerald-400"
-              }`}
+                  : "text-text-secondary hover:text-emerald-400 hover:bg-glass-hover"
+              )}
             >
               Seeding
             </button>
             <button
               type="button"
               onClick={() => setFilterStatus("unseeded")}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={cn(
+                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
                 filterStatus === "unseeded"
                   ? "bg-amber-500 text-white shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-amber-400"
-              }`}
+                  : "text-text-secondary hover:text-amber-400 hover:bg-glass-hover"
+              )}
             >
               Unseeded
             </button>
-          </div>
 
-          <div className="h-4 w-[1px] bg-glass-border flex-shrink-0" />
+            <div className="h-4 w-[1px] bg-glass-border flex-shrink-0 mx-0.5" />
 
-          {/* Sort Options: Name | Size | Date (unified next to filters) */}
-          <div className="inline-flex items-center p-0.5 rounded-lg bg-surface-elevated border border-glass-border flex-shrink-0">
+            {/* Sort Options: Name | Size | Date */}
             <button
               type="button"
               onClick={() => setSortBy("name")}
-              className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+              className={cn(
+                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
                 sortBy === "name"
-                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
+                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold border border-glass-border/40"
+                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
+              )}
               title="Sort alphabetically"
             >
               Name
@@ -794,11 +796,12 @@ export function FileBrowserPage() {
             <button
               type="button"
               onClick={() => setSortBy("size")}
-              className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+              className={cn(
+                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
                 sortBy === "size"
-                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
+                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold border border-glass-border/40"
+                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
+              )}
               title="Sort by size (largest first)"
             >
               Size
@@ -806,11 +809,12 @@ export function FileBrowserPage() {
             <button
               type="button"
               onClick={() => setSortBy("date")}
-              className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
+              className={cn(
+                "h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg text-xs font-medium transition-all flex-shrink-0",
                 sortBy === "date"
-                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
+                  ? "bg-surface-overlay text-text-primary shadow-sm font-semibold border border-glass-border/40"
+                  : "text-text-secondary hover:text-text-primary hover:bg-glass-hover"
+              )}
               title="Sort by date modified (newest first)"
             >
               Date
