@@ -25,13 +25,19 @@ async def start_help_command_handler(client: Client, message: Message):
         "Bot ini terhubung langsung ke daemon qBittorrent Anda untuk memantau aktivitas unduhan dan unggahan secara real-time.\n\n"
         "📌 <b>Perintah yang Tersedia:</b>\n"
         "• <code>/status</code> - Pantau kecepatan transfer, progres torrent yang sedang aktif (download/upload), dan storage.\n"
+        "• <code>/upload</code> - Menampilkan file/folder server dan memilih untuk di-upload ke Google Drive.\n"
+        "• <code>/copy</code> - Menampilkan file/folder di Google Drive untuk di-copy/download ke server.\n"
         "• <code>/shell &lt;cmd&gt;</code> - Menjalankan perintah Linux shell di server (contoh: <code>/shell ls</code>).\n"
         "• <code>/help</code> - Menampilkan pesan panduan ini.\n\n"
-        "Tekan tombol di bawah untuk melihat status qBittorrent saat ini:"
+        "Tekan tombol di bawah untuk navigasi cepat:"
     )
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 Cek Status Torrent", callback_data="status_page:1")],
+        [
+            InlineKeyboardButton("📤 Upload ke Drive", callback_data="up_start"),
+            InlineKeyboardButton("📥 Copy dari Drive", callback_data="cp_start"),
+        ],
     ])
 
     await message.reply_text(text, reply_markup=keyboard, disable_web_page_preview=True)
