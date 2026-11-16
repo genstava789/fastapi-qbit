@@ -171,7 +171,11 @@ class GDriveService:
         return build("drive", "v3", credentials=creds)
 
     def list_files(
-        self, folder_id: str = "root", page_token: Optional[str] = None
+        self,
+        folder_id: str = "root",
+        page_token: Optional[str] = None,
+        page_size: int = 50,
+        query: Optional[str] = None,
     ) -> Dict[str, Any]:
         """List files/folders in a Drive folder along with folder hierarchy metadata."""
         service = self._build_service()
@@ -179,12 +183,16 @@ class GDriveService:
         is_root = not folder_id or folder_id == "root" or (root_id is not None and folder_id == root_id)
         effective_folder_id = "root" if is_root else folder_id
 
-        query = f"'{effective_folder_id}' in parents and trashed = false"
+        if query:
+            q = f"({query}) and trashed = false"
+        else:
+            q = f"'{effective_folder_id}' in parents and trashed = false"
+
         results = (
             service.files()
             .list(
-                q=query,
-                pageSize=50,
+                q=q,
+                pageSize=max(1, min(page_size, 100)),
                 fields="nextPageToken, files(id, name, mimeType, size, modifiedTime, parents)",
                 pageToken=page_token,
                 orderBy="folder,name",
