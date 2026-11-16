@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Dict, List, Optional
+import threading
+from typing import Any, Callable, Dict, List, Optional, Union
 import qbittorrentapi
 from app.core.config import settings
 
@@ -67,26 +68,47 @@ def is_add_torrent_success(result: Any) -> bool:
 class QBitService:
     def __init__(self) -> None:
         self._client: Optional[qbittorrentapi.Client] = None
+        self._lock = threading.Lock()
 
     def get_client(self) -> qbittorrentapi.Client:
-        """Returns an authenticated qbittorrent-api client instance."""
-        if self._client is None:
-            self._client = qbittorrentapi.Client(
-                host=settings.qbit_base_url,
-                username=settings.QBIT_USERNAME,
-                password=settings.QBIT_PASSWORD,
-                VERIFY_WEBUI_CERTIFICATE=settings.QBIT_VERIFY_WEBUI_CERTIFICATE,
-            )
-        try:
-            # Test authentication or login if required
-            self._client.auth_log_in()
-        except qbittorrentapi.LoginFailed as e:
-            logger.error(f"qBittorrent login failed: {e}")
-            raise RuntimeError(f"qBittorrent authentication failed: {e}")
-        except Exception as e:
-            logger.warning(f"Connection test info: {e}")
+        """Returns an authenticated qbittorrent-api client instance in a thread-safe manner."""
+        with self._lock:
+            if self._client is None:
+                self._client = qbittorrentapi.Client(
+                    host=settings.qbit_base_url,
+                    username=settings.QBIT_USERNAME,
+                    password=settings.QBIT_PASSWORD,
+                    VERIFY_WEBUI_CERTIFICATE=settings.QBIT_VERIFY_WEBUI_CERTIFICATE,
+                )
+                try:
+                    self._client.auth_log_in()
+                except qbittorrentapi.LoginFailed as e:
+                    logger.error(f"qBittorrent login failed: {e}")
+                    raise RuntimeError(f"qBittorrent authentication failed: {e}")
+                except Exception as e:
+                    logger.warning(f"Connection test info: {e}")
+            elif not getattr(self._client, "is_logged_in", False):
+                try:
+                    self._client.auth_log_in()
+                except Exception as e:
+                    logger.warning(f"Session re-login info: {e}")
 
-        return self._client
+            return self._client
+
+    def _execute_with_retry(self, action_func: Callable[[qbittorrentapi.Client], Any]) -> Any:
+        """Executes a qBittorrent client action with automatic single re-auth on 401/403."""
+        client = self.get_client()
+        try:
+            return action_func(client)
+        except (qbittorrentapi.Forbidden, qbittorrentapi.Unauthorized401Error) as e:
+            logger.warning(f"qBittorrent returned auth error ({e}), re-authenticating and retrying...")
+            with self._lock:
+                try:
+                    client.auth_log_in()
+                except Exception as reauth_err:
+                    logger.error(f"Failed to re-authenticate: {reauth_err}")
+                    raise
+            return action_func(client)
 
     def check_connection(self) -> tuple[bool, Optional[str]]:
         """Checks if qBittorrent daemon is reachable and returns version."""
@@ -240,17 +262,23 @@ class QBitService:
             "added_on": _extract_int_field(t, "added_on"),
         }
 
-    def pause_torrent(self, torrent_hash: str) -> None:
-        client = self.get_client()
-        client.torrents_pause(torrent_hashes=torrent_hash)
+    def pause_torrent(self, torrent_hash: Union[str, List[str]]) -> None:
+        self._execute_with_retry(lambda client: client.torrents_pause(torrent_hashes=torrent_hash))
 
-    def resume_torrent(self, torrent_hash: str) -> None:
-        client = self.get_client()
-        client.torrents_resume(torrent_hashes=torrent_hash)
+    def resume_torrent(self, torrent_hash: Union[str, List[str]]) -> None:
+        self._execute_with_retry(lambda client: client.torrents_resume(torrent_hashes=torrent_hash))
 
-    def delete_torrent(self, torrent_hash: str, delete_files: bool = False) -> None:
-        client = self.get_client()
-        client.torrents_delete(torrent_hashes=torrent_hash, delete_files=delete_files)
+    def delete_torrent(self, torrent_hash: Union[str, List[str]], delete_files: bool = False) -> None:
+        def _delete_action(client: qbittorrentapi.Client) -> None:
+            # If the torrent is actively seeding or downloading, pause first
+            # so libtorrent flushes/releases any locked file descriptors
+            try:
+                client.torrents_pause(torrent_hashes=torrent_hash)
+            except Exception as e:
+                logger.debug(f"Pre-delete pause ignored or failed: {e}")
+            client.torrents_delete(torrent_hashes=torrent_hash, delete_files=delete_files)
+
+        self._execute_with_retry(_delete_action)
 
     def export_torrent_file(self, torrent_hash: str) -> bytes:
         """Exports the .torrent file data for a given torrent hash."""

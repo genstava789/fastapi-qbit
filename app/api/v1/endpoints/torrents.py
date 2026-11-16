@@ -1,9 +1,12 @@
+import re
 from typing import List, Optional
 from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from app.schemas.torrent import (
     AddMagnetRequest,
     TorrentActionResponse,
     TorrentItemResponse,
+    BulkDeleteTorrentsRequest,
+    BulkActionRequest,
 )
 from app.services.qbit_service import is_add_torrent_success, qbit_service
 
@@ -148,18 +151,105 @@ def get_torrent(torrent_hash: str):
 
 
 @router.post(
+    "/bulk-pause",
+    response_model=TorrentActionResponse,
+    summary="Bulk Pause Torrents",
+    description="Pause multiple active torrents in a single request.",
+)
+def bulk_pause_torrents(payload: BulkActionRequest):
+    hashes = [h.strip() for h in payload.hashes if h.strip()]
+    if not hashes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No torrent hashes provided.",
+        )
+    try:
+        qbit_service.pause_torrent(hashes)
+        return TorrentActionResponse(
+            success=True,
+            message=f"{len(hashes)} torrent(s) paused successfully.",
+            data={"hashes": hashes},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to pause torrents: {str(e)}",
+        )
+
+
+@router.post(
+    "/bulk-resume",
+    response_model=TorrentActionResponse,
+    summary="Bulk Resume Torrents",
+    description="Resume multiple paused torrents in a single request.",
+)
+def bulk_resume_torrents(payload: BulkActionRequest):
+    hashes = [h.strip() for h in payload.hashes if h.strip()]
+    if not hashes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No torrent hashes provided.",
+        )
+    try:
+        qbit_service.resume_torrent(hashes)
+        return TorrentActionResponse(
+            success=True,
+            message=f"{len(hashes)} torrent(s) resumed successfully.",
+            data={"hashes": hashes},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to resume torrents: {str(e)}",
+        )
+
+
+@router.post(
+    "/bulk-delete",
+    response_model=TorrentActionResponse,
+    summary="Bulk Delete Torrents",
+    description="Remove multiple torrents from qBittorrent in a single atomic request.",
+)
+def bulk_delete_torrents(payload: BulkDeleteTorrentsRequest):
+    hashes = [h.strip() for h in payload.hashes if h.strip()]
+    if not hashes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No torrent hashes provided for deletion.",
+        )
+    try:
+        qbit_service.delete_torrent(hashes, delete_files=payload.delete_files)
+        return TorrentActionResponse(
+            success=True,
+            message=f"{len(hashes)} torrent(s) deleted successfully (delete_files={payload.delete_files}).",
+            data={"hashes": hashes, "delete_files": payload.delete_files},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete torrents: {str(e)}",
+        )
+
+
+@router.post(
     "/{torrent_hash}/pause",
     response_model=TorrentActionResponse,
     summary="Pause Torrent",
-    description="Pause an active torrent download.",
+    description="Pause an active torrent download (accepts single or pipe/comma separated hashes).",
 )
 def pause_torrent(torrent_hash: str):
+    hashes = [h.strip() for h in re.split(r"[,|]", torrent_hash) if h.strip()]
+    if not hashes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No torrent hash provided.",
+        )
     try:
-        qbit_service.pause_torrent(torrent_hash)
+        qbit_service.pause_torrent(hashes)
         return TorrentActionResponse(
             success=True,
-            message=f"Torrent '{torrent_hash}' has been paused.",
-            data={"hash": torrent_hash},
+            message=f"{len(hashes)} torrent(s) paused successfully.",
+            data={"hashes": hashes},
         )
     except Exception as e:
         raise HTTPException(
@@ -172,15 +262,21 @@ def pause_torrent(torrent_hash: str):
     "/{torrent_hash}/resume",
     response_model=TorrentActionResponse,
     summary="Resume Torrent",
-    description="Resume a paused torrent.",
+    description="Resume a paused torrent (accepts single or pipe/comma separated hashes).",
 )
 def resume_torrent(torrent_hash: str):
+    hashes = [h.strip() for h in re.split(r"[,|]", torrent_hash) if h.strip()]
+    if not hashes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No torrent hash provided.",
+        )
     try:
-        qbit_service.resume_torrent(torrent_hash)
+        qbit_service.resume_torrent(hashes)
         return TorrentActionResponse(
             success=True,
-            message=f"Torrent '{torrent_hash}' has been resumed.",
-            data={"hash": torrent_hash},
+            message=f"{len(hashes)} torrent(s) resumed successfully.",
+            data={"hashes": hashes},
         )
     except Exception as e:
         raise HTTPException(
@@ -193,7 +289,7 @@ def resume_torrent(torrent_hash: str):
     "/{torrent_hash}",
     response_model=TorrentActionResponse,
     summary="Delete Torrent",
-    description="Remove a torrent from qBittorrent, optionally deleting downloaded data files.",
+    description="Remove a torrent (or multiple separated by comma/pipe) from qBittorrent, optionally deleting downloaded data files.",
 )
 def delete_torrent(
     torrent_hash: str,
@@ -202,12 +298,18 @@ def delete_torrent(
         description="If true, permanently delete downloaded files on disk.",
     ),
 ):
+    hashes = [h.strip() for h in re.split(r"[,|]", torrent_hash) if h.strip()]
+    if not hashes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No torrent hash provided.",
+        )
     try:
-        qbit_service.delete_torrent(torrent_hash, delete_files=delete_files)
+        qbit_service.delete_torrent(hashes, delete_files=delete_files)
         return TorrentActionResponse(
             success=True,
-            message=f"Torrent '{torrent_hash}' deleted successfully (delete_files={delete_files}).",
-            data={"hash": torrent_hash, "delete_files": delete_files},
+            message=f"{len(hashes)} torrent(s) deleted successfully (delete_files={delete_files}).",
+            data={"hashes": hashes, "delete_files": delete_files},
         )
     except Exception as e:
         raise HTTPException(

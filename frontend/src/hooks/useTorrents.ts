@@ -179,13 +179,17 @@ export function useBulkPauseTorrents() {
   const instance = useActiveInstance();
   return useMutation({
     mutationFn: async (hashes: string[]) => {
-      await Promise.all(hashes.map((hash) => api!.pauseTorrent(hash)));
+      if (!api || hashes.length === 0) return;
+      return api.bulkPauseTorrents(hashes);
     },
     onSuccess: (_data, hashes) => {
       toast.success(`${hashes.length} torrent dijeda`);
       qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
     },
-    onError: (err: Error) => toast.error(`Gagal menjeda massal: ${err.message}`),
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Gagal menjeda massal: ${msg}`);
+    },
   });
 }
 
@@ -195,13 +199,17 @@ export function useBulkResumeTorrents() {
   const instance = useActiveInstance();
   return useMutation({
     mutationFn: async (hashes: string[]) => {
-      await Promise.all(hashes.map((hash) => api!.resumeTorrent(hash)));
+      if (!api || hashes.length === 0) return;
+      return api.bulkResumeTorrents(hashes);
     },
     onSuccess: (_data, hashes) => {
       toast.success(`${hashes.length} torrent dilanjutkan`);
       qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
     },
-    onError: (err: Error) => toast.error(`Gagal melanjutkan massal: ${err.message}`),
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Gagal melanjutkan massal: ${msg}`);
+    },
   });
 }
 
@@ -217,13 +225,19 @@ export function useBulkDeleteTorrents() {
       hashes: string[];
       deleteFiles: boolean;
     }) => {
-      await Promise.all(hashes.map((hash) => api!.deleteTorrent(hash, deleteFiles)));
+      if (!api || hashes.length === 0) return;
+      return api.bulkDeleteTorrents(hashes, deleteFiles);
     },
     onSuccess: (_data, { hashes }) => {
       toast.success(`${hashes.length} torrent berhasil dihapus`);
       qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["local-files", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["system-stats", instance?.id] });
     },
-    onError: (err: Error) => toast.error(`Gagal menghapus massal: ${err.message}`),
+    onError: (err: any) => {
+      const msg = err.response?.data?.detail || err.message;
+      toast.error(`Gagal menghapus massal: ${msg}`);
+    },
   });
 }
 

@@ -758,10 +758,37 @@ export function FileBrowserPage() {
   const executeBatchDelete = async () => {
     if (!api || selectedPaths.size === 0) return;
     setIsBatchDeleting(true);
+
+    const selectedFileEntries = allSelectableFiles.filter((f) =>
+      selectedPaths.has(f.path)
+    );
+
+    const torrentHashes = Array.from(
+      new Set(
+        selectedFileEntries
+          .map((f) => f.torrentHash || f.torrent?.hash)
+          .filter(Boolean) as string[]
+      )
+    );
+    const nonTorrentPaths = selectedFileEntries
+      .filter((f) => !f.torrentHash && !f.torrent?.hash)
+      .map((f) => f.path);
+
     let successCount = 0;
     let failCount = 0;
 
-    for (const path of selectedPaths) {
+    // Delete torrents atomically with deleteFiles=true to stop seeding and remove files
+    if (torrentHashes.length > 0) {
+      try {
+        await api.bulkDeleteTorrents(torrentHashes, true);
+        successCount += torrentHashes.length;
+      } catch {
+        failCount += torrentHashes.length;
+      }
+    }
+
+    // Delete standalone local files
+    for (const path of nonTorrentPaths) {
       try {
         await api.deleteLocalFile(path);
         successCount++;
@@ -776,6 +803,7 @@ export function FileBrowserPage() {
     if (successCount > 0) {
       toast.success(`${successCount} file(s) deleted`);
       qc.invalidateQueries({ queryKey: ["local-files", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
     }
     if (failCount > 0) {
       toast.error(`Failed to delete ${failCount} file(s)`);

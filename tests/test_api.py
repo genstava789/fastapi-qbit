@@ -341,3 +341,70 @@ async def test_add_magnet_torrents_added_metadata_failure(monkeypatch):
         assert "Could not add magnet link" in data["message"]
 
 
+@pytest.mark.anyio
+async def test_bulk_delete_torrents(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    deleted_hashes = []
+    deleted_files_flag = []
+
+    def mock_delete(torrent_hash, delete_files=False):
+        deleted_hashes.append(torrent_hash)
+        deleted_files_flag.append(delete_files)
+
+    monkeypatch.setattr(qbit_service, "delete_torrent", mock_delete)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Test POST /api/v1/torrents/bulk-delete
+        resp1 = await client.post(
+            "/api/v1/torrents/bulk-delete",
+            json={"hashes": ["hash1", "hash2"], "delete_files": True},
+        )
+        assert resp1.status_code == 200
+        data1 = resp1.json()
+        assert data1["success"] is True
+        assert "2 torrent(s) deleted" in data1["message"]
+        assert deleted_hashes[-1] == ["hash1", "hash2"]
+        assert deleted_files_flag[-1] is True
+
+        # 2. Test DELETE /api/v1/torrents/{hash1,hash2} comma-separated
+        resp2 = await client.delete(
+            "/api/v1/torrents/hashA,hashB?delete_files=true"
+        )
+        assert resp2.status_code == 200
+        data2 = resp2.json()
+        assert data2["success"] is True
+        assert deleted_hashes[-1] == ["hashA", "hashB"]
+
+
+@pytest.mark.anyio
+async def test_bulk_pause_and_resume_torrents(monkeypatch):
+    from app.services.qbit_service import qbit_service
+
+    paused = []
+    resumed = []
+
+    monkeypatch.setattr(qbit_service, "pause_torrent", lambda h: paused.append(h))
+    monkeypatch.setattr(qbit_service, "resume_torrent", lambda h: resumed.append(h))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Bulk pause
+        resp1 = await client.post(
+            "/api/v1/torrents/bulk-pause",
+            json={"hashes": ["h1", "h2"]},
+        )
+        assert resp1.status_code == 200
+        assert paused[-1] == ["h1", "h2"]
+
+        # Bulk resume
+        resp2 = await client.post(
+            "/api/v1/torrents/bulk-resume",
+            json={"hashes": ["h1", "h2"]},
+        )
+        assert resp2.status_code == 200
+        assert resumed[-1] == ["h1", "h2"]
+
+
+

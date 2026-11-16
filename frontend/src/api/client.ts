@@ -163,6 +163,33 @@ export class QbitApi {
     return data;
   }
 
+  async bulkDeleteTorrents(
+    hashes: string[],
+    deleteFiles = false
+  ): Promise<TorrentActionResponse> {
+    const { data } = await this.client.post<TorrentActionResponse>(
+      "/torrents/bulk-delete",
+      { hashes, delete_files: deleteFiles }
+    );
+    return data;
+  }
+
+  async bulkPauseTorrents(hashes: string[]): Promise<TorrentActionResponse> {
+    const { data } = await this.client.post<TorrentActionResponse>(
+      "/torrents/bulk-pause",
+      { hashes }
+    );
+    return data;
+  }
+
+  async bulkResumeTorrents(hashes: string[]): Promise<TorrentActionResponse> {
+    const { data } = await this.client.post<TorrentActionResponse>(
+      "/torrents/bulk-resume",
+      { hashes }
+    );
+    return data;
+  }
+
   getExportUrl(hash: string): string {
     return `${this.client.defaults.baseURL}/torrents/${hash}/export`;
   }

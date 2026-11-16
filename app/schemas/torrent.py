@@ -69,6 +69,15 @@ class TorrentActionResponse(BaseModel):
     data: Optional[dict] = None
 
 
+class BulkDeleteTorrentsRequest(BaseModel):
+    hashes: List[str] = Field(..., min_length=1, description="List of torrent hashes to delete.")
+    delete_files: bool = Field(default=False, description="Whether to also delete downloaded files on disk.")
+
+
+class BulkActionRequest(BaseModel):
+    hashes: List[str] = Field(..., min_length=1, description="List of torrent hashes to pause or resume.")
+
+
 class HealthResponse(BaseModel):
     status: str
     app_version: str

@@ -117,6 +117,22 @@ describe("QbitApi client", () => {
     expect(mockClient.delete).toHaveBeenCalledWith("/torrents/hash1", {
       params: { delete_files: true },
     });
+
+    await api.bulkDeleteTorrents(["hash1", "hash2"], true);
+    expect(mockClient.post).toHaveBeenCalledWith("/torrents/bulk-delete", {
+      hashes: ["hash1", "hash2"],
+      delete_files: true,
+    });
+
+    await api.bulkPauseTorrents(["hash1", "hash2"]);
+    expect(mockClient.post).toHaveBeenCalledWith("/torrents/bulk-pause", {
+      hashes: ["hash1", "hash2"],
+    });
+
+    await api.bulkResumeTorrents(["hash1", "hash2"]);
+    expect(mockClient.post).toHaveBeenCalledWith("/torrents/bulk-resume", {
+      hashes: ["hash1", "hash2"],
+    });
   });
 
   it("calls system stats and server paths endpoints", async () => {
