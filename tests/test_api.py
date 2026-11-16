@@ -202,14 +202,25 @@ async def test_system_local_files_listing_and_deletion(tmp_path, monkeypatch):
         assert "Downloads" in file_names
         assert "copied_from_drive.mkv" in file_names
 
+        # Rename file
+        rename_resp = await client.patch(
+            "/api/v1/system/files",
+            json={"path": str(file_a), "new_name": "renamed_drive_file.mkv"},
+        )
+        assert rename_resp.status_code == 200
+        assert rename_resp.json()["success"] is True
+        renamed_path = sub_dir / "renamed_drive_file.mkv"
+        assert renamed_path.exists()
+        assert not file_a.exists()
+
         # Delete file
         del_resp = await client.delete(
             "/api/v1/system/files",
-            params={"path": str(file_a)},
+            params={"path": str(renamed_path)},
         )
         assert del_resp.status_code == 200
         assert del_resp.json()["success"] is True
-        assert not file_a.exists()
+        assert not renamed_path.exists()
 
 
 @pytest.mark.anyio

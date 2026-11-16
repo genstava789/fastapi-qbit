@@ -1,5 +1,10 @@
-import { useState, useMemo } from "react";
-import { useTorrents, useLocalFiles, useDeleteLocalFile } from "@/hooks/useTorrents";
+import { useState, useMemo, useEffect } from "react";
+import {
+  useTorrents,
+  useLocalFiles,
+  useDeleteLocalFile,
+  useRenameLocalFile,
+} from "@/hooks/useTorrents";
 import { formatBytes } from "@/lib/utils";
 import {
   FolderOpen,
@@ -16,8 +21,14 @@ import {
   UploadCloud,
   HardDriveDownload,
   CheckCircle2,
+  Radio,
+  Pencil,
+  ArrowUpCircle,
+  ArrowDownCircle,
+  CloudDownload,
+  Loader2,
 } from "lucide-react";
-import { ListSkeleton, Skeleton } from "@/components/ui";
+import { ListSkeleton, Skeleton, Modal, Input } from "@/components/ui";
 import { useAppStore } from "@/stores/appStore";
 import { useDriveAuthStatus, useDriveDownloads } from "@/hooks/useDrive";
 import { DriveAuthModal, UploadToDriveModal, ActiveDriveDownloads } from "@/components/drive";
@@ -30,6 +41,7 @@ interface LocalFileEntry {
   size: number;
   modified?: number;
   torrentHash?: string;
+  torrent?: TorrentItem;
   isDriveCompleted?: boolean;
 }
 
@@ -107,27 +119,44 @@ function buildFileTree(
       getOrCreatePathNode(f.path);
     } else {
       const targetFolder = getOrCreatePathNode(f.parent_path);
+      const matchingTorrent = torrents.find(
+        (t) =>
+          (f.torrent_hash && t.hash === f.torrent_hash) ||
+          t.name.toLowerCase() === f.name.toLowerCase() ||
+          (t.content_path && t.content_path.toLowerCase() === f.path.toLowerCase())
+      );
       targetFolder.localFiles.push({
         name: f.name,
         path: f.path,
         size: f.size,
         modified: f.modified,
-        torrentHash: f.torrent_hash || undefined,
+        torrentHash: f.torrent_hash || matchingTorrent?.hash,
+        torrent: matchingTorrent,
       });
       addFolderSize(f.parent_path, f.size);
     }
   }
 
-  // 2. Torrents from qBittorrent
+  // 2. Torrents from qBittorrent (merge with local files or add if standalone)
   for (const t of torrents) {
     const targetNode = getOrCreatePathNode(t.save_path);
     const existing = targetNode.localFiles.find(
-      (f) => f.name.toLowerCase() === t.name.toLowerCase()
+      (f) =>
+        f.name.toLowerCase() === t.name.toLowerCase() ||
+        f.torrentHash === t.hash ||
+        (f.torrent && f.torrent.hash === t.hash)
     );
     if (existing) {
+      existing.torrent = t;
       existing.torrentHash = t.hash;
     } else {
-      targetNode.torrents.push(t);
+      targetNode.localFiles.push({
+        name: t.name,
+        path: t.content_path || `${t.save_path.replace(/[/\\]+$/, "")}/${t.name}`,
+        size: t.total_size,
+        torrentHash: t.hash,
+        torrent: t,
+      });
       addFolderSize(t.save_path, t.total_size);
     }
   }
@@ -169,6 +198,87 @@ interface ActionTarget {
   torrentHash?: string;
 }
 
+interface RenameFileModalProps {
+  open: boolean;
+  onClose: () => void;
+  target: { path: string; name: string } | null;
+}
+
+function RenameFileModal({ open, onClose, target }: RenameFileModalProps) {
+  const [newName, setNewName] = useState("");
+  const renameMutation = useRenameLocalFile();
+
+  useEffect(() => {
+    if (target) {
+      setNewName(target.name);
+    }
+  }, [target]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!target || !newName.trim() || newName.trim() === target.name) {
+      onClose();
+      return;
+    }
+    renameMutation.mutate(
+      { path: target.path, newName: newName.trim() },
+      {
+        onSuccess: () => {
+          onClose();
+        },
+      }
+    );
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rename File / Folder" size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="text-xs uppercase tracking-wider text-text-muted font-semibold block mb-1.5">
+            Nama Baru
+          </label>
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Masukkan nama baru..."
+            autoFocus
+          />
+          <p className="text-xs text-text-muted font-mono mt-1.5 truncate" title={target?.path}>
+            Lokasi: {target?.path}
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[42px] px-4 rounded-xl text-sm text-text-secondary hover:bg-glass-hover transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            disabled={renameMutation.isPending || !newName.trim() || newName.trim() === target?.name}
+            className="min-h-[42px] px-5 flex items-center justify-center gap-2 rounded-xl bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm transition-all shadow-md shadow-accent/25"
+          >
+            {renameMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Menyimpan...
+              </>
+            ) : (
+              <>
+                <Pencil className="w-4 h-4" />
+                Simpan Nama
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function FolderItem({
   node,
   depth = 0,
@@ -179,19 +289,8 @@ function FolderItem({
   onOpenActionMenu: (target: ActionTarget) => void;
 }) {
   const [expanded, setExpanded] = useState(depth < 2);
-  const openAddTorrentWithPrefill = useAppStore(
-    (s) => s.openAddTorrentWithPrefill
-  );
-  const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
 
   const hasItems =
-    node.children.length > 0 ||
-    node.torrents.length > 0 ||
-    node.localFiles.length > 0 ||
-    (node.activeDownloads && node.activeDownloads.length > 0);
-
-  const hasCompleted =
-    node.torrents.some((t) => t.progress >= 100) ||
     node.children.length > 0 ||
     node.localFiles.length > 0 ||
     (node.activeDownloads && node.activeDownloads.length > 0);
@@ -225,7 +324,7 @@ function FolderItem({
           </span>
         </button>
 
-        {hasCompleted && (
+        {hasItems && (
           <button
             type="button"
             onClick={() =>
@@ -273,7 +372,7 @@ function FolderItem({
                     {d.progress_percent.toFixed(1)}%
                   </span>
                   <span className="text-[11px] text-text-muted ml-1.5">
-                    (Pulling from Drive{d.speed_bytes_sec > 0 ? ` • ${formatBytes(d.speed_bytes_sec)}/s` : ""})
+                    (Sedang Mengunduh dari Drive{d.speed_bytes_sec > 0 ? ` • ${formatBytes(d.speed_bytes_sec)}/s` : ""})
                   </span>
                 </p>
               </div>
@@ -286,126 +385,96 @@ function FolderItem({
             </div>
           ))}
 
-          {/* Local files on disk (including completed Drive downloads) */}
-          {node.localFiles?.map((file) => (
-            <div
-              key={file.path}
-              className="flex items-center gap-2 pr-1 min-h-[48px] py-2 hover:bg-glass-hover/30 rounded-xl transition-colors"
-              style={{ paddingLeft: `${Math.min(depth + 1, 4) * 14 + 8}px` }}
-            >
-              <span className="w-4 flex-shrink-0" />
-              {file.isDriveCompleted ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              ) : (
-                <File className="w-4 h-4 text-sky-400 flex-shrink-0" />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <p className="text-sm text-text-primary truncate font-medium">{file.name}</p>
-                  {file.isDriveCompleted && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
-                      From Drive
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-text-muted font-mono">
-                  {formatBytes(file.size)} ·{" "}
-                  <span className={file.isDriveCompleted ? "text-emerald-400 font-medium" : "text-text-muted"}>
-                    {file.isDriveCompleted ? "Copied to Server" : "Local File"}
-                  </span>
-                </p>
-              </div>
+          {/* Files (Unified: Seeding Torrents, Unseeded Local Files, Drive Copies) */}
+          {node.localFiles?.map((file) => {
+            const isSeeding = file.torrent && file.torrent.progress >= 100;
+            const isDownloading = file.torrent && file.torrent.progress < 100;
 
-              <button
-                type="button"
-                onClick={() =>
-                  onOpenActionMenu({
-                    type: "file",
-                    title: file.name,
-                    savePath: file.path,
-                    torrentHash: file.torrentHash,
-                  })
-                }
-                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover flex-shrink-0"
-                aria-label={`Actions for ${file.name}`}
+            return (
+              <div
+                key={file.path}
+                className="flex items-center gap-2 pr-1 min-h-[52px] py-2 hover:bg-glass-hover/30 rounded-xl transition-colors"
+                style={{ paddingLeft: `${Math.min(depth + 1, 4) * 14 + 8}px` }}
               >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
+                <span className="w-4 flex-shrink-0" />
 
-          {/* Standalone torrents */}
-          {node.torrents.map((t) => (
-            <div
-              key={t.hash}
-              className="flex items-center gap-2 pr-1 min-h-[48px] py-2 hover:bg-glass-hover/30 rounded-xl transition-colors"
-              style={{ paddingLeft: `${Math.min(depth + 1, 4) * 14 + 8}px` }}
-            >
-              <span className="w-4 flex-shrink-0" />
-              <File className="w-4 h-4 text-accent flex-shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-text-primary truncate">{t.name}</p>
-                <p className="text-xs text-text-muted font-mono">
-                  {formatBytes(t.total_size)} ·{" "}
-                  <span
-                    className={
-                      t.progress >= 100 ? "text-success" : "text-accent"
-                    }
-                  >
-                    {t.progress.toFixed(1)}%
-                  </span>
-                </p>
-              </div>
+                {/* File Icon */}
+                {isSeeding ? (
+                  <ArrowUpCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                ) : isDownloading ? (
+                  <ArrowDownCircle className="w-4 h-4 text-sky-400 flex-shrink-0" />
+                ) : file.isDriveCompleted ? (
+                  <CloudDownload className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                ) : (
+                  <File className="w-4 h-4 text-text-secondary flex-shrink-0" />
+                )}
 
-              {t.progress >= 100 ? (
+                {/* File Information and Badges */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                    <p className="text-sm text-text-primary truncate font-medium" title={file.name}>
+                      {file.name}
+                    </p>
+
+                    {/* Status Badges */}
+                    {isSeeding ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        <Radio className="w-2.5 h-2.5 animate-pulse" />
+                        Seeding (Torrent)
+                      </span>
+                    ) : isDownloading ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                        Torrent ({file.torrent!.progress.toFixed(1)}%)
+                      </span>
+                    ) : file.isDriveCompleted ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                        Bukan Torrent · Dari Drive
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/10 text-text-secondary border border-glass-border">
+                        Bukan Torrent (Belum di-seed)
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-text-muted font-mono mt-0.5">
+                    {formatBytes(file.size)} ·{" "}
+                    {isSeeding ? (
+                      <span className="text-emerald-400 font-medium">
+                        Aktif Seeding {file.torrent?.ratio !== undefined ? `(Ratio: ${file.torrent.ratio.toFixed(2)})` : ""}
+                        {file.torrent?.upload_speed ? ` • ↑ ${formatBytes(file.torrent.upload_speed)}/s` : ""}
+                      </span>
+                    ) : isDownloading ? (
+                      <span className="text-sky-400 font-medium">
+                        Sedang Mengunduh ({file.torrent!.progress.toFixed(1)}%)
+                      </span>
+                    ) : (
+                      <span className="text-amber-400/90 font-medium">
+                        Penyimpanan Lokal (Belum di-seed)
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Actions Button */}
                 <button
                   type="button"
                   onClick={() =>
                     onOpenActionMenu({
-                      type: "torrent",
-                      title: t.name,
-                      savePath: t.content_path || (
-                        t.save_path.endsWith("/")
-                          ? `${t.save_path}${t.name}`
-                          : `${t.save_path}/${t.name}`
-                      ),
-                      torrentHash: t.hash,
+                      type: "file",
+                      title: file.name,
+                      savePath: file.path,
+                      torrentHash: file.torrentHash || file.torrent?.hash,
                     })
                   }
                   className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-hover flex-shrink-0"
-                  aria-label={`Actions for ${t.name}`}
+                  aria-label={`Actions for ${file.name}`}
                 >
                   <MoreVertical className="w-4 h-4" />
                 </button>
-              ) : (
-                <div className="flex items-center flex-shrink-0">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openAddTorrentWithPrefill({
-                        savePath: t.save_path,
-                        reseedMode: true,
-                        skipChecking: false,
-                        title: t.name,
-                      })
-                    }
-                    className="hidden sm:flex min-w-[44px] min-h-[44px] items-center justify-center rounded-xl text-text-muted hover:text-accent hover:bg-accent/10"
-                    title="Re-check & Seed"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteConfirmHash(t.hash)}
-                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-text-muted hover:text-danger hover:bg-danger/10"
-                    title="Delete torrent & files"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -425,6 +494,7 @@ export function FileBrowserPage() {
   );
   const setDeleteConfirmHash = useAppStore((s) => s.setDeleteConfirmHash);
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
+  const [renameModalTarget, setRenameModalTarget] = useState<{ path: string; name: string } | null>(null);
   const { data: driveAuth } = useDriveAuthStatus();
   const [driveAuthModalOpen, setDriveAuthModalOpen] = useState(false);
   const [uploadDrivePath, setUploadDrivePath] = useState<string | null>(null);
@@ -485,7 +555,7 @@ export function FileBrowserPage() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">File Browser</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Browse downloaded files and trigger Re-Seed directly from VPS paths
+          Kelola file unduhan, bedakan file Seeding Torrent dan Local Storage, serta trigger Re-Seed langsung dari path VPS
         </p>
       </div>
 
@@ -527,7 +597,6 @@ export function FileBrowserPage() {
       ) : filteredTree ? (
         <div className="glass rounded-xl p-2">
           {filteredTree.children.length > 0 ||
-          filteredTree.torrents.length > 0 ||
           filteredTree.localFiles.length > 0 ||
           (filteredTree.activeDownloads && filteredTree.activeDownloads.length > 0) ? (
             filteredTree.children.map((child) => (
@@ -582,6 +651,24 @@ export function FileBrowserPage() {
               </button>
             </div>
 
+            {/* Rename File / Folder */}
+            <button
+              type="button"
+              onClick={() => {
+                const target = actionTarget;
+                setActionTarget(null);
+                setRenameModalTarget({
+                  path: target.savePath,
+                  name: target.title,
+                });
+              }}
+              className="flex items-center gap-3 w-full px-4 min-h-[48px] rounded-xl text-sm font-medium text-text-primary hover:bg-glass-hover transition-colors"
+            >
+              <Pencil className="w-5 h-5 text-accent" />
+              Ganti Nama (Rename)
+            </button>
+
+            {/* Seed with Torrent / Magnet */}
             <button
               type="button"
               onClick={() => {
@@ -600,6 +687,7 @@ export function FileBrowserPage() {
               Seed with Torrent / Magnet
             </button>
 
+            {/* Upload to Google Drive */}
             <button
               type="button"
               onClick={() => handleUploadToDrive(actionTarget)}
@@ -609,6 +697,7 @@ export function FileBrowserPage() {
               Upload to Google Drive
             </button>
 
+            {/* Copy Server Path */}
             <button
               type="button"
               onClick={() => {
@@ -621,6 +710,7 @@ export function FileBrowserPage() {
               Copy Server Path
             </button>
 
+            {/* Delete Option */}
             {actionTarget.torrentHash ? (
               <div className="pt-2 border-t border-glass-border">
                 <button
@@ -643,7 +733,7 @@ export function FileBrowserPage() {
                   onClick={() => {
                     const path = actionTarget.savePath;
                     setActionTarget(null);
-                    if (window.confirm(`Delete local file "${actionTarget.title}"?`)) {
+                    if (window.confirm(`Hapus file lokal "${actionTarget.title}"?`)) {
                       deleteLocalFileMutation.mutate(path);
                     }
                   }}
@@ -657,6 +747,13 @@ export function FileBrowserPage() {
           </div>
         </div>
       )}
+
+      {/* Rename File / Folder Modal */}
+      <RenameFileModal
+        open={!!renameModalTarget}
+        onClose={() => setRenameModalTarget(null)}
+        target={renameModalTarget}
+      />
 
       <DriveAuthModal
         open={driveAuthModalOpen}

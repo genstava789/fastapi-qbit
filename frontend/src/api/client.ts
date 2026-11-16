@@ -4,6 +4,7 @@ import type {
   AddMagnetRequest,
   HealthStatus,
   LocalFilesResponse,
+  RenameFileResponse,
   ServerPathsResponse,
   SystemStats,
   TorrentActionResponse,
@@ -126,6 +127,14 @@ export class QbitApi {
       "/system/files",
       { params: { path } }
     );
+    return data;
+  }
+
+  async renameLocalFile(path: string, newName: string): Promise<RenameFileResponse> {
+    const { data } = await this.client.patch<RenameFileResponse>("/system/files", {
+      path,
+      new_name: newName,
+    });
     return data;
   }
 

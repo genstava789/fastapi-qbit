@@ -12,6 +12,8 @@ from app.core.config import settings
 from app.schemas.torrent import (
     LocalFileItem,
     LocalFilesResponse,
+    RenameFileRequest,
+    RenameFileResponse,
     ServerFileItem,
     ServerPathItem,
     ServerPathsResponse,
@@ -333,5 +335,93 @@ def delete_local_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete: {str(e)}",
+        ) from e
+
+
+@router.patch(
+    "/files",
+    response_model=RenameFileResponse,
+    summary="Rename Local Server File or Directory",
+    description="Rename a file or directory located inside the configured server download directory.",
+)
+@router.post(
+    "/files/rename",
+    response_model=RenameFileResponse,
+    summary="Rename Local Server File or Directory",
+    description="Rename a file or directory located inside the configured server download directory.",
+)
+def rename_local_file(payload: RenameFileRequest):
+    new_name = payload.new_name.strip()
+    if not new_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="New name cannot be empty.",
+        )
+    if "/" in new_name or "\\" in new_name or "\0" in new_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="New name cannot contain path separators.",
+        )
+
+    base_root = os.path.realpath(settings.DEFAULT_SAVE_PATH)
+    requested = os.path.realpath(payload.path)
+
+    try:
+        if os.path.commonpath([base_root, requested]) != base_root or requested == base_root:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot rename files outside or root of download directory.",
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid path.",
+        ) from e
+
+    if not os.path.exists(requested):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File or directory to rename does not exist.",
+        )
+
+    parent_dir = os.path.dirname(requested)
+    target_path = os.path.join(parent_dir, new_name)
+    real_target = os.path.realpath(target_path)
+
+    try:
+        if os.path.commonpath([base_root, real_target]) != base_root:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="New path would be outside download directory.",
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid target path.",
+        ) from e
+
+    if os.path.exists(target_path) and real_target != requested:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"An item named '{new_name}' already exists in this folder.",
+        )
+
+    try:
+        os.rename(requested, target_path)
+        return RenameFileResponse(
+            success=True,
+            message=f"Renamed successfully to '{new_name}'",
+            old_path=requested,
+            new_path=target_path,
+        )
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission denied: {str(e)}",
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rename: {str(e)}",
         ) from e
 

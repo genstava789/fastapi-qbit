@@ -278,3 +278,23 @@ export function useDeleteLocalFile() {
     },
   });
 }
+
+export function useRenameLocalFile() {
+  const api = useApi();
+  const qc = useQueryClient();
+  const instance = useActiveInstance();
+  return useMutation({
+    mutationFn: ({ path, newName }: { path: string; newName: string }) =>
+      api!.renameLocalFile(path, newName),
+    onSuccess: (data) => {
+      toast.success(data?.message || "File renamed successfully");
+      qc.invalidateQueries({ queryKey: ["local-files", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["server-paths", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["torrents", instance?.id] });
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || err?.message || "Failed to rename";
+      toast.error(msg);
+    },
+  });
+}

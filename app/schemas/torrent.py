@@ -128,3 +128,20 @@ class LocalFileItem(BaseModel):
 class LocalFilesResponse(BaseModel):
     root_path: str
     files: List[LocalFileItem]
+
+
+class RenameFileRequest(BaseModel):
+    path: str = Field(..., description="Absolute path of the file or directory to rename.")
+    new_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="New filename or folder name (name only, without path separators).",
+    )
+
+
+class RenameFileResponse(BaseModel):
+    success: bool
+    message: str
+    old_path: str
+    new_path: str

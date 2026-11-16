@@ -105,6 +105,13 @@ export interface LocalFilesResponse {
   files: LocalFileItem[];
 }
 
+export interface RenameFileResponse {
+  success: boolean;
+  message: string;
+  old_path: string;
+  new_path: string;
+}
+
 export interface ProwlarrSearchResult {
   title: string;
   size: number;
