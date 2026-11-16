@@ -549,7 +549,7 @@ async def upload_start_callback(client: Client, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@Client.on_message(filters.regex(r"^[1-8]$") & filters.text & ~filters.command(["upload", "copy", "start", "help", "status", "shell", "sh"]))
+@Client.on_message(filters.regex(r"^[1-8]$") & filters.text & ~filters.command(["upload", "copy", "delete", "start", "help", "status", "shell", "sh"]))
 @new_task
 async def number_choice_message_handler(client: Client, message: Message):
     """Allows user to select an item by simply typing the number (1-8) in chat."""
@@ -572,13 +572,28 @@ async def number_choice_message_handler(client: Client, message: Message):
         copy_sessions = {}
         process_copy_choice = None
 
+    # Safely import delete_sessions
+    try:
+        from bot.command.delete import delete_sessions, process_delete_choice
+    except ImportError:
+        delete_sessions = {}
+        process_delete_choice = None
+
     cp_sess = copy_sessions.get(user_id) if copy_sessions else None
+    del_sess = delete_sessions.get(user_id) if delete_sessions else None
 
     up_time = up_sess.get("timestamp", 0) if up_sess else 0
     cp_time = cp_sess.get("timestamp", 0) if cp_sess else 0
+    del_time = del_sess.get("timestamp", 0) if del_sess else 0
 
     # Pick whichever menu was opened more recently and within 5 minutes (300s)
-    if up_time > cp_time and (now - up_time) < 300:
-        await process_upload_choice(client, message, user_id, idx, is_callback=False)
-    elif cp_time > 0 and (now - cp_time) < 300 and process_copy_choice:
+    max_time = max(up_time, cp_time, del_time)
+    if max_time == 0 or (now - max_time) >= 300:
+        return
+
+    if max_time == del_time and process_delete_choice:
+        await process_delete_choice(client, message, user_id, idx, is_callback=False)
+    elif max_time == cp_time and process_copy_choice:
         await process_copy_choice(client, message, user_id, idx, is_callback=False)
+    elif max_time == up_time:
+        await process_upload_choice(client, message, user_id, idx, is_callback=False)
