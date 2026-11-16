@@ -8,6 +8,13 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def mock_gdrive_settings_file(tmp_path, monkeypatch):
+    test_settings_file = str(tmp_path / "gdrive_settings.json")
+    monkeypatch.setattr("app.services.gdrive_service.GDRIVE_SETTINGS_FILE", test_settings_file)
+
+
+
 @pytest.mark.anyio
 async def test_gdrive_auth_status():
     transport = ASGITransport(app=app)

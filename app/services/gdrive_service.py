@@ -431,25 +431,43 @@ class GDriveService:
         """Upload a single file using resumable upload and update progress."""
         file_size = os.path.getsize(local_path)
         filename = os.path.basename(local_path)
-        media = MediaFileUpload(
-            local_path,
-            resumable=True,
-            chunksize=5 * 1024 * 1024,  # 5 MB chunks
-        )
-        file_metadata = {
-            "name": filename,
-            "parents": [parent_id],
-        }
-        request = service.files().create(
-            body=file_metadata, media_body=media, fields="id, name"
-        )
-        response = None
-        while response is None:
-            upload_status, response = request.next_chunk()
-            if upload_status and state.total_bytes > 0:
-                current_file_bytes = int(upload_status.progress() * file_size)
-                state.bytes_uploaded = min(state.total_bytes, base_uploaded + current_file_bytes)
-                state.progress_percent = round((state.bytes_uploaded / state.total_bytes) * 100, 2)
+
+        effective_parent = parent_id if parent_id and parent_id != "root" else None
+        file_metadata: Dict[str, Any] = {"name": filename}
+        if effective_parent:
+            file_metadata["parents"] = [effective_parent]
+
+        def _do_upload(meta: Dict[str, Any]) -> Any:
+            media = MediaFileUpload(
+                local_path,
+                resumable=True,
+                chunksize=5 * 1024 * 1024,  # 5 MB chunks
+            )
+            req = service.files().create(
+                body=meta, media_body=media, fields="id, name"
+            )
+            resp = None
+            while resp is None:
+                upload_status, resp = req.next_chunk()
+                if upload_status and state.total_bytes > 0:
+                    current_file_bytes = int(upload_status.progress() * file_size)
+                    state.bytes_uploaded = min(state.total_bytes, base_uploaded + current_file_bytes)
+                    state.progress_percent = round((state.bytes_uploaded / state.total_bytes) * 100, 2)
+            return resp
+
+        try:
+            response = _do_upload(file_metadata)
+        except Exception as exc:
+            # If upload to specific parent failed (e.g. folder not found / 404), fallback to root
+            if file_metadata.get("parents"):
+                logger.warning(
+                    f"Upload to parent {file_metadata['parents']} failed ({exc}), falling back to root..."
+                )
+                file_metadata_root = {"name": filename}
+                response = _do_upload(file_metadata_root)
+            else:
+                raise
+
         if response and response.get("id"):
             state.drive_file_id = response.get("id")
         return file_size
@@ -458,12 +476,25 @@ class GDriveService:
         self, service: Any, dir_path: str, parent_id: str, state: UploadState
     ) -> None:
         """Upload a directory recursively into Google Drive."""
-        root_folder_meta = {
+        root_folder_meta: Dict[str, Any] = {
             "name": os.path.basename(dir_path.rstrip("/\\")) or "Uploads",
             "mimeType": "application/vnd.google-apps.folder",
-            "parents": [parent_id],
         }
-        drive_root = service.files().create(body=root_folder_meta, fields="id").execute()
+        if parent_id and parent_id != "root":
+            root_folder_meta["parents"] = [parent_id]
+
+        try:
+            drive_root = service.files().create(body=root_folder_meta, fields="id").execute()
+        except Exception as exc:
+            if root_folder_meta.get("parents"):
+                logger.warning(
+                    f"Creating folder in parent {root_folder_meta['parents']} failed ({exc}), falling back to root..."
+                )
+                root_folder_meta.pop("parents", None)
+                drive_root = service.files().create(body=root_folder_meta, fields="id").execute()
+            else:
+                raise
+
         drive_root_id = drive_root["id"]
         state.drive_file_id = drive_root_id
 
@@ -585,10 +616,10 @@ class GDriveService:
         task_ids: List[str] = []
         for item in items:
             task_id = str(uuid.uuid4())
-            file_id = item.get("file_id") or ""
+            file_id = item.get("file_id") or item.get("id") or ""
             name = item.get("name") or "download"
             size = item.get("size")
-            mime_type = item.get("mime_type") or ""
+            mime_type = item.get("mime_type") or item.get("mimeType") or ""
             is_dir = mime_type == "application/vnd.google-apps.folder"
 
             state = DownloadState(
