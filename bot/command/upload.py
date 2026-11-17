@@ -549,7 +549,7 @@ async def upload_start_callback(client: Client, callback_query: CallbackQuery):
     await callback_query.answer()
 
 
-@Client.on_message(filters.regex(r"^[1-8]$") & filters.text & ~filters.command(["upload", "copy", "delete", "start", "help", "status", "shell", "sh"]))
+@Client.on_message(filters.regex(r"^[1-8]$") & filters.text & ~filters.command(["upload", "copy", "delete", "start", "help", "status", "shell", "sh", "autosubsync"]))
 @new_task
 async def number_choice_message_handler(client: Client, message: Message):
     """Allows user to select an item by simply typing the number (1-8) in chat."""
@@ -579,19 +579,30 @@ async def number_choice_message_handler(client: Client, message: Message):
         delete_sessions = {}
         process_delete_choice = None
 
+    # Safely import autosubsync_sessions
+    try:
+        from bot.modules.autosubsync import autosubsync_sessions, process_autosubsync_choice
+    except ImportError:
+        autosubsync_sessions = {}
+        process_autosubsync_choice = None
+
     cp_sess = copy_sessions.get(user_id) if copy_sessions else None
     del_sess = delete_sessions.get(user_id) if delete_sessions else None
+    as_sess = autosubsync_sessions.get(user_id) if autosubsync_sessions else None
 
     up_time = up_sess.get("timestamp", 0) if up_sess else 0
     cp_time = cp_sess.get("timestamp", 0) if cp_sess else 0
     del_time = del_sess.get("timestamp", 0) if del_sess else 0
+    as_time = as_sess.get("timestamp", 0) if as_sess else 0
 
     # Pick whichever menu was opened more recently and within 5 minutes (300s)
-    max_time = max(up_time, cp_time, del_time)
+    max_time = max(up_time, cp_time, del_time, as_time)
     if max_time == 0 or (now - max_time) >= 300:
         return
 
-    if max_time == del_time and process_delete_choice:
+    if max_time == as_time and process_autosubsync_choice:
+        await process_autosubsync_choice(client, message, user_id, idx, is_callback=False)
+    elif max_time == del_time and process_delete_choice:
         await process_delete_choice(client, message, user_id, idx, is_callback=False)
     elif max_time == cp_time and process_copy_choice:
         await process_copy_choice(client, message, user_id, idx, is_callback=False)

@@ -14,5 +14,9 @@ google-auth-httplib2>=0.2.0
 google-api-python-client>=2.120.0
 pyrogram>=2.0.106
 tgcrypto>=1.2.5
+ffsubsync>=0.5.1
+autosubsync>=1.0.2
+pysubs2>=1.2.0
+static-ffmpeg>=3.0
 
 

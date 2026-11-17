@@ -78,7 +78,7 @@ services:
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH:-}
       - TELEGRAM_AUTHORIZED_USERS=${TELEGRAM_AUTHORIZED_USERS:-}
     volumes:
-      - ./downloads:/downloads:ro
+      - ./downloads:/downloads
       - ./rclone.conf:/app/rclone.conf:ro
     depends_on:
       - qbittorrent
