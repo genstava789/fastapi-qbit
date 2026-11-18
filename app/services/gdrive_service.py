@@ -119,7 +119,6 @@ class GDriveService:
         flow = self._create_flow(redirect_uri)
         auth_url, _ = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
             prompt="consent",
         )
         return auth_url

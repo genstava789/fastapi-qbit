@@ -680,7 +680,6 @@ export function directGetAuthUrl(redirectUri?: string): string {
     scope: "https://www.googleapis.com/auth/drive",
     access_type: "offline",
     prompt: "consent",
-    include_granted_scopes: "true",
   });
 
   return `https://accounts.google.com/o/oauth2/auth?${params.toString()}`;
