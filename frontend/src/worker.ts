@@ -58,14 +58,16 @@ async function getAccessToken(
   }
 
   // 1. Direct refresh if Worker environment contains OAuth secrets
-  if (env.GDRIVE_REFRESH_TOKEN && env.GDRIVE_CLIENT_ID && env.GDRIVE_CLIENT_SECRET) {
+  const clientId = env.GDRIVE_CLIENT_ID;
+  const clientSecret = env.GDRIVE_CLIENT_SECRET;
+  if (env.GDRIVE_REFRESH_TOKEN && clientId && clientSecret) {
     try {
       const resp = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          client_id: env.GDRIVE_CLIENT_ID,
-          client_secret: env.GDRIVE_CLIENT_SECRET,
+          client_id: clientId,
+          client_secret: clientSecret,
           refresh_token: env.GDRIVE_REFRESH_TOKEN,
           grant_type: "refresh_token",
         }),

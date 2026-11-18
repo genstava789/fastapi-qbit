@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Instance, TorrentFilter } from "@/types";
+import { DEFAULT_GDRIVE_CLIENT_ID, DEFAULT_GDRIVE_CLIENT_SECRET } from "@/api/gdriveDirect";
 
 const DEFAULT_INSTANCES: Instance[] = [
   {
@@ -202,8 +203,8 @@ export const useAppStore = create<AppState>()(
       gdriveAccessToken: null,
       gdriveRefreshToken: null,
       gdriveTokenExpiry: null,
-      gdriveClientId: null,
-      gdriveClientSecret: null,
+      gdriveClientId: DEFAULT_GDRIVE_CLIENT_ID || null,
+      gdriveClientSecret: DEFAULT_GDRIVE_CLIENT_SECRET || null,
       gdriveApiKey: null,
       setGDriveTokens: (tokens) =>
         set((state) => ({
@@ -273,6 +274,12 @@ export const useAppStore = create<AppState>()(
           } else {
             state.instances = DEFAULT_INSTANCES;
           }
+          if (!state.gdriveClientId || state.gdriveClientId.includes("YOUR_CLIENT_ID")) {
+            state.gdriveClientId = DEFAULT_GDRIVE_CLIENT_ID || null;
+          }
+          if (!state.gdriveClientSecret || state.gdriveClientSecret.includes("YOUR_CLIENT_SECRET")) {
+            state.gdriveClientSecret = DEFAULT_GDRIVE_CLIENT_SECRET || null;
+          }
         }
         return persistedState;
       },
@@ -281,6 +288,14 @@ export const useAppStore = create<AppState>()(
           state.instances = sanitizeInstances(state.instances);
           if (!state.activeInstanceId || !state.instances.some((i) => i.id === state.activeInstanceId)) {
             state.activeInstanceId = state.instances[0]?.id || "default-vps";
+          }
+        }
+        if (state) {
+          if (!state.gdriveClientId || state.gdriveClientId.includes("YOUR_CLIENT_ID")) {
+            state.gdriveClientId = DEFAULT_GDRIVE_CLIENT_ID || null;
+          }
+          if (!state.gdriveClientSecret || state.gdriveClientSecret.includes("YOUR_CLIENT_SECRET")) {
+            state.gdriveClientSecret = DEFAULT_GDRIVE_CLIENT_SECRET || null;
           }
         }
       },

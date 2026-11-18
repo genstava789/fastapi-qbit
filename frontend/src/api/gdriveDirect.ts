@@ -9,6 +9,15 @@ import type {
 const GDRIVE_API_BASE = "https://www.googleapis.com/drive/v3";
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
+export const DEFAULT_GDRIVE_CLIENT_ID =
+  typeof __GDRIVE_DEFAULT_CLIENT_ID__ !== "undefined" && __GDRIVE_DEFAULT_CLIENT_ID__
+    ? __GDRIVE_DEFAULT_CLIENT_ID__
+    : "";
+export const DEFAULT_GDRIVE_CLIENT_SECRET =
+  typeof __GDRIVE_DEFAULT_CLIENT_SECRET__ !== "undefined" && __GDRIVE_DEFAULT_CLIENT_SECRET__
+    ? __GDRIVE_DEFAULT_CLIENT_SECRET__
+    : "";
+
 // In-memory cache for folder names and parent associations to avoid redundant roundtrips
 const folderNameCache = new Map<string, { id: string; name: string; parentId?: string | null }>();
 folderNameCache.set("root", { id: "root", name: "My Drive", parentId: null });
@@ -59,8 +68,8 @@ export async function getValidAccessToken(forceRefresh = false): Promise<string>
   const currentToken = store.gdriveAccessToken;
   const expiry = store.gdriveTokenExpiry;
   const refreshToken = store.gdriveRefreshToken;
-  const clientId = store.gdriveClientId;
-  const clientSecret = store.gdriveClientSecret;
+  const clientId = store.gdriveClientId || DEFAULT_GDRIVE_CLIENT_ID;
+  const clientSecret = store.gdriveClientSecret || DEFAULT_GDRIVE_CLIENT_SECRET;
 
   // 1. Return cached access token if still fresh (more than 60s remaining)
   if (!forceRefresh && currentToken && (!expiry || expiry > now + 60000)) {
@@ -597,8 +606,8 @@ export async function directExchangeAuthCode(
   redirectUri: string
 ): Promise<{ success: boolean; message: string }> {
   const store = useAppStore.getState();
-  const clientId = store.gdriveClientId;
-  const clientSecret = store.gdriveClientSecret;
+  const clientId = store.gdriveClientId || DEFAULT_GDRIVE_CLIENT_ID;
+  const clientSecret = store.gdriveClientSecret || DEFAULT_GDRIVE_CLIENT_SECRET;
 
   if (clientId && clientSecret) {
     try {
@@ -659,7 +668,7 @@ export function directGetAuthUrl(redirectUri?: string): string {
   const store = useAppStore.getState();
   const clientId =
     store.gdriveClientId ||
-    "YOUR_CLIENT_ID.apps.googleusercontent.com";
+    DEFAULT_GDRIVE_CLIENT_ID;
 
   const effectiveRedirect =
     redirectUri || (typeof window !== "undefined" ? `${window.location.origin}/drive` : "http://localhost:5173/drive");
