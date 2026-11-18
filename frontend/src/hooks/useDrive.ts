@@ -398,7 +398,10 @@ export function useDownloadToServer() {
       items: DriveDownloadToServerItem[];
       destinationPath?: string;
       autoAttachReseed?: boolean;
-    }) => api!.startDownloadToServer(items, destinationPath, autoAttachReseed),
+    }) => {
+      const token = useAppStore.getState().gdriveAccessToken;
+      return api!.startDownloadToServer(items, destinationPath, autoAttachReseed, token || undefined);
+    },
     onSuccess: (_data, variables) => {
       const count = variables.items.length;
       toast.success(

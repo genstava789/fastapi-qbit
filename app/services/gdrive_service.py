@@ -53,6 +53,7 @@ class DownloadState:
     speed_bytes_sec: float = 0.0
     is_directory: bool = False
     auto_attach_reseed: bool = False
+    access_token: Optional[str] = None
     error: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     completed_at: Optional[float] = None
@@ -600,9 +601,20 @@ class GDriveService:
         items: List[Dict[str, Any]],
         destination_path: Optional[str] = None,
         auto_attach_reseed: bool = False,
+        access_token: Optional[str] = None,
     ) -> List[str]:
         """Start background download/pull of Google Drive files/folders to local server."""
         from app.core.config import settings
+
+        if access_token:
+            try:
+                from google.oauth2.credentials import Credentials
+                creds = Credentials(token=access_token)
+                with open(TOKEN_FILE, "w") as f:
+                    f.write(creds.to_json())
+                logger.info("Synchronized access_token from client to server token.json")
+            except Exception as e:
+                logger.debug(f"Could not persist token.json: {e}")
 
         target_dir = (
             destination_path.strip()
@@ -634,6 +646,7 @@ class GDriveService:
                 total_bytes=size_int,
                 is_directory=is_dir,
                 auto_attach_reseed=auto_attach_reseed,
+                access_token=access_token,
             )
             self._downloads[task_id] = state
             task_ids.append(task_id)
@@ -655,7 +668,7 @@ class GDriveService:
         base_downloaded: int = 0,
     ) -> int:
         """Stream a single file from Google Drive into target_path with speed tracking."""
-        resp = self.open_download_stream(file_id)
+        resp = self.open_download_stream(file_id, access_token=state.access_token)
         if resp.status_code >= 400:
             error_body = resp.text
             raise RuntimeError(
@@ -782,7 +795,12 @@ class GDriveService:
 
         try:
             state.status = "downloading"
-            service = self._build_service()
+            if state.access_token:
+                from google.oauth2.credentials import Credentials
+                from googleapiclient.discovery import build
+                service = build("drive", "v3", credentials=Credentials(token=state.access_token))
+            else:
+                service = self._build_service()
 
             try:
                 meta = service.files().get(
@@ -1015,14 +1033,23 @@ class GDriveService:
 
         return info
 
-    def open_download_stream(self, file_id: str, range_header: Optional[str] = None):
+    def open_download_stream(
+        self,
+        file_id: str,
+        range_header: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ):
         """Open a streaming connection to Google Drive API v3 alt=media with range header support."""
         import requests
-        creds = self.get_credentials()
-        if not creds:
-            raise RuntimeError("Not authenticated with Google Drive.")
+        if access_token:
+            token = access_token
+        else:
+            creds = self.get_credentials()
+            if not creds:
+                raise RuntimeError("Not authenticated with Google Drive.")
+            token = creds.token
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&supportsAllDrives=true"
-        headers = {"Authorization": f"Bearer {creds.token}"}
+        headers = {"Authorization": f"Bearer {token}"}
         if range_header:
             headers["Range"] = range_header
         return requests.get(url, headers=headers, stream=True, timeout=60)

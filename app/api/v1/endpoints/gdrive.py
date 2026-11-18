@@ -421,6 +421,7 @@ def download_to_server(payload: DriveDownloadToServerRequest):
             items=[item.model_dump() for item in payload.items],
             destination_path=payload.destination_path,
             auto_attach_reseed=payload.auto_attach_reseed,
+            access_token=payload.access_token,
         )
         return {
             "success": True,

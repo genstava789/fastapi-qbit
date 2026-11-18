@@ -340,7 +340,8 @@ export class DriveApi {
   async startDownloadToServer(
     items: DriveDownloadToServerItem[],
     destinationPath?: string,
-    autoAttachReseed?: boolean
+    autoAttachReseed?: boolean,
+    accessToken?: string
   ): Promise<{ success: boolean; task_ids: string[]; message: string }> {
     const { data } = await this.client.post<{
       success: boolean;
@@ -350,6 +351,7 @@ export class DriveApi {
       items,
       destination_path: destinationPath,
       auto_attach_reseed: !!autoAttachReseed,
+      access_token: accessToken,
     });
     return data;
   }

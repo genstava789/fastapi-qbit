@@ -18,7 +18,7 @@ export function ActiveDriveDownloads() {
     (s) => s.openAddTorrentWithPrefill
   );
 
-  // Auto-clear completed or failed tasks so they don't pile up in the UI
+  // Auto-clear completed tasks so they don't pile up in the UI
   useEffect(() => {
     if (!downloads || downloads.length === 0) return;
 
@@ -55,23 +55,26 @@ export function ActiveDriveDownloads() {
           );
         }
       } else if (d.status === "failed") {
-        hasCompleted = true;
+        toast.error(`Failed pulling '${d.filename}' to server: ${d.error || "Authentication or network error"}`, {
+          id: `dl-fail-${d.task_id}`,
+          duration: 6000,
+        });
       }
     }
 
     if (hasCompleted) {
-      // Delay slightly (1.2s) so 100% progress state is briefly visible before clearing
+      // Delay slightly (2.5s) so 100% progress state is visible before clearing
       const timer = setTimeout(() => {
         clearCompleted.mutate();
-      }, 1200);
+      }, 2500);
       return () => clearTimeout(timer);
     }
   }, [downloads, clearCompleted, openAddTorrentWithPrefill]);
 
-  // Only show tasks currently in progress (downloading or pending)
+  // Show tasks currently in progress (downloading, pending, or failed)
   const activeTasks =
     downloads?.filter(
-      (d) => d.status === "downloading" || d.status === "pending"
+      (d) => d.status === "downloading" || d.status === "pending" || d.status === "failed"
     ) || [];
 
   if (activeTasks.length === 0) {

@@ -100,6 +100,7 @@ class DriveDownloadToServerRequest(BaseModel):
     items: List[DriveDownloadToServerItem] = Field(..., description="List of items to download/pull to VPS storage.")
     destination_path: Optional[str] = Field(default=None, description="Local VPS directory path to save into.")
     auto_attach_reseed: bool = Field(default=False, description="Whether to mark or link for re-seeding.")
+    access_token: Optional[str] = Field(default=None, description="Optional Google Drive access token from browser.")
 
 
 class DriveDownloadProgress(BaseModel):
