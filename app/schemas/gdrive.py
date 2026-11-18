@@ -89,6 +89,13 @@ class DriveDefaultPathResponse(BaseModel):
     folder_name: Optional[str] = None
 
 
+class DriveSyncTokenRequest(BaseModel):
+    access_token: str = Field(..., description="Google Drive access token")
+    refresh_token: Optional[str] = Field(default=None, description="Google Drive refresh token")
+    client_id: Optional[str] = Field(default=None, description="Google OAuth Client ID")
+    client_secret: Optional[str] = Field(default=None, description="Google OAuth Client Secret")
+
+
 class DriveDownloadToServerItem(BaseModel):
     file_id: str = Field(..., description="Google Drive file or folder ID to download.")
     name: str = Field(..., description="File or folder name.")

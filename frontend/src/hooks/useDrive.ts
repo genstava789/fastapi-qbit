@@ -390,7 +390,7 @@ export function useDownloadToServer() {
   const qc = useQueryClient();
   const instance = useActiveInstance();
   return useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       items,
       destinationPath,
       autoAttachReseed,
@@ -399,8 +399,13 @@ export function useDownloadToServer() {
       destinationPath?: string;
       autoAttachReseed?: boolean;
     }) => {
-      const token = useAppStore.getState().gdriveAccessToken;
-      return api!.startDownloadToServer(items, destinationPath, autoAttachReseed, token || undefined);
+      let token: string | undefined;
+      try {
+        token = await getValidAccessToken();
+      } catch {
+        token = useAppStore.getState().gdriveAccessToken || undefined;
+      }
+      return api!.startDownloadToServer(items, destinationPath, autoAttachReseed, token);
     },
     onSuccess: (_data, variables) => {
       const count = variables.items.length;

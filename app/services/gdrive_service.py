@@ -596,6 +596,45 @@ class GDriveService:
 
     # ── Downloads to Server (Pull from Drive to VPS) ──────────────────────
 
+    def save_sync_token(
+        self,
+        access_token: str,
+        refresh_token: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+    ) -> None:
+        """Save a synchronized Google Drive token from client to server token.json."""
+        token_data: Dict[str, Any] = {
+            "token": access_token,
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "scopes": SCOPES,
+        }
+        if refresh_token:
+            token_data["refresh_token"] = refresh_token
+
+        # Load client credentials from credentials.json if not provided
+        creds_path = self._get_credentials_path()
+        if os.path.exists(creds_path):
+            try:
+                with open(creds_path) as f:
+                    cdata = json.load(f)
+                    winfo = cdata.get("web") or cdata.get("installed") or {}
+                    if not client_id:
+                        client_id = winfo.get("client_id")
+                    if not client_secret:
+                        client_secret = winfo.get("client_secret")
+            except Exception:
+                pass
+
+        if client_id:
+            token_data["client_id"] = client_id
+        if client_secret:
+            token_data["client_secret"] = client_secret
+
+        with open(TOKEN_FILE, "w") as f:
+            json.dump(token_data, f, indent=2)
+        logger.info("Successfully synced and saved token.json on server.")
+
     def start_download_to_server(
         self,
         items: List[Dict[str, Any]],
@@ -608,11 +647,7 @@ class GDriveService:
 
         if access_token:
             try:
-                from google.oauth2.credentials import Credentials
-                creds = Credentials(token=access_token)
-                with open(TOKEN_FILE, "w") as f:
-                    f.write(creds.to_json())
-                logger.info("Synchronized access_token from client to server token.json")
+                self.save_sync_token(access_token=access_token)
             except Exception as e:
                 logger.debug(f"Could not persist token.json: {e}")
 

@@ -57,6 +57,36 @@ export class GDriveApiError extends Error {
 }
 
 /**
+ * Synchronize Google Drive OAuth tokens to active backend so server-side operations
+ * (e.g. Copy to Local Server) have access without prompting for auth again.
+ */
+export async function syncTokenToBackend(
+  accessToken: string,
+  refreshToken?: string,
+  clientId?: string,
+  clientSecret?: string
+): Promise<void> {
+  try {
+    const store = useAppStore.getState();
+    const activeInstance = store.instances.find((i) => i.id === store.activeInstanceId) || store.instances[0];
+    if (!activeInstance?.url) return;
+    const url = `${activeInstance.url.replace(/\/+$/, "")}${activeInstance.apiPrefix || "/api/v1"}/drive/sync-token`;
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_token: accessToken,
+        refresh_token: refreshToken || store.gdriveRefreshToken || undefined,
+        client_id: clientId || store.gdriveClientId || DEFAULT_GDRIVE_CLIENT_ID || undefined,
+        client_secret: clientSecret || store.gdriveClientSecret || DEFAULT_GDRIVE_CLIENT_SECRET || undefined,
+      }),
+    });
+  } catch (err) {
+    console.debug("Backend token sync skipped or failed:", err);
+  }
+}
+
+/**
  * Retrieve a valid Google Drive access token directly in the browser.
  * Auto-refreshes if refresh token and credentials exist.
  * Optionally synchronizes once from the backend if frontend state is uninitialized.
@@ -103,6 +133,7 @@ export async function getValidAccessToken(forceRefresh = false): Promise<string>
             accessToken: tokenData.access_token,
             expiry: newExpiry,
           });
+          syncTokenToBackend(tokenData.access_token, refreshToken, clientId, clientSecret);
           return tokenData.access_token;
         }
       }
@@ -633,6 +664,7 @@ export async function directExchangeAuthCode(
           refreshToken: data.refresh_token,
           expiry: Date.now() + (expiresIn - 120) * 1000,
         });
+        syncTokenToBackend(data.access_token, data.refresh_token, clientId, clientSecret);
         return { success: true, message: "Google Drive authenticated successfully." };
       }
     } catch (e) {

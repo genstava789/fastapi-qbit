@@ -18,6 +18,7 @@ from app.schemas.gdrive import (
     DriveListResponse,
     DriveRenameFileRequest,
     DriveStorageQuota,
+    DriveSyncTokenRequest,
     DriveUploadProgress,
     DriveUploadRequest,
 )
@@ -82,6 +83,27 @@ def auth_callback(payload: DriveAuthCodeRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Auth callback failed: {str(e)}",
+        )
+
+
+@router.post(
+    "/sync-token",
+    summary="Sync Google Drive Token",
+    description="Synchronize Google Drive OAuth tokens from the client to the server.",
+)
+def sync_token(payload: DriveSyncTokenRequest):
+    try:
+        gdrive_service.save_sync_token(
+            access_token=payload.access_token,
+            refresh_token=payload.refresh_token,
+            client_id=payload.client_id,
+            client_secret=payload.client_secret,
+        )
+        return {"success": True, "message": "Token synced to server successfully."}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Token sync failed: {str(e)}",
         )
 
 
