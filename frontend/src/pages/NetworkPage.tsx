@@ -84,7 +84,7 @@ export function NetworkPage() {
 
   const runConnectivityChecks = async () => {
     setConnChecking(true);
-    const activeUrl = instance?.url || "https://mild-leaf.nyc.boxd.sh";
+    const activeUrl = instance?.url || "https://keen-shore.nyc.boxd.sh";
     const apiPrefix = instance?.apiPrefix || "/api/v1";
 
     const list = [

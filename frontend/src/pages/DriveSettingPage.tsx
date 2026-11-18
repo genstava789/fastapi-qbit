@@ -1,19 +1,21 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  useDriveApi,
   useDriveAuthStatus,
   useDriveStorageQuota,
   useDriveDefaultPath,
   useDriveEmptyTrash,
 } from "@/hooks/useDrive";
 import { useQueryClient } from "@tanstack/react-query";
-import { useActiveInstance } from "@/hooks/useTorrents";
 import { useAppStore } from "@/stores/appStore";
 import { formatBytes } from "@/lib/utils";
 import { ProgressBar, Badge, Skeleton } from "@/components/ui";
 import { DriveAuthModal, DriveFolderPickerModal } from "@/components/drive";
 import { UI_STRINGS } from "@/lib/strings";
+import {
+  directTestConnection,
+  getValidAccessToken,
+} from "@/api/gdriveDirect";
 import {
   HardDrive,
   FolderOpen,
@@ -22,21 +24,40 @@ import {
   User,
   Trash2,
   FolderSync,
+  Key,
+  RefreshCw,
+  CheckCircle,
+  ExternalLink,
+  ShieldCheck,
+  Save,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 export function DriveSettingPage() {
   const navigate = useNavigate();
-  const api = useDriveApi();
   const qc = useQueryClient();
-  const instance = useActiveInstance();
 
   const driveDefaultFolderId = useAppStore((s) => s.driveDefaultFolderId);
   const driveDefaultFolderName = useAppStore((s) => s.driveDefaultFolderName);
   const setDriveDefaultFolder = useAppStore((s) => s.setDriveDefaultFolder);
 
+  const gdriveAccessToken = useAppStore((s) => s.gdriveAccessToken);
+  const gdriveRefreshToken = useAppStore((s) => s.gdriveRefreshToken);
+  const gdriveClientId = useAppStore((s) => s.gdriveClientId);
+  const gdriveClientSecret = useAppStore((s) => s.gdriveClientSecret);
+  const setGDriveTokens = useAppStore((s) => s.setGDriveTokens);
+  const clearGDriveTokens = useAppStore((s) => s.clearGDriveTokens);
+
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+
+  // Manual token input states
+  const [tokenInput, setTokenInput] = useState(gdriveAccessToken || "");
+  const [clientIdInput, setClientIdInput] = useState(gdriveClientId || "");
+  const [clientSecretInput, setClientSecretInput] = useState(gdriveClientSecret || "");
+  const [refreshTokenInput, setRefreshTokenInput] = useState(gdriveRefreshToken || "");
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [syncingFromServer, setSyncingFromServer] = useState(false);
 
   const { data: authStatus, isLoading: authLoading } = useDriveAuthStatus();
   const isAuthenticated = !!authStatus?.authenticated;
@@ -50,19 +71,20 @@ export function DriveSettingPage() {
   const { mutation: defaultPathMutation } = useDriveDefaultPath();
   const emptyTrashMutation = useDriveEmptyTrash();
 
-  const storagePercent = quota && quota.limit > 0
-    ? Math.min(100, Math.max(0, (quota.usage / quota.limit) * 100))
-    : 0;
+  const storagePercent =
+    quota && quota.limit > 0
+      ? Math.min(100, Math.max(0, (quota.usage / quota.limit) * 100))
+      : 0;
 
-  const freeStorage = quota && quota.limit > 0
-    ? Math.max(0, quota.limit - quota.usage)
-    : 0;
+  const freeStorage =
+    quota && quota.limit > 0 ? Math.max(0, quota.limit - quota.usage) : 0;
 
   const handleLogout = async () => {
-    if (!api) return;
     try {
-      await api.logout();
-      qc.invalidateQueries({ queryKey: ["drive-auth-status", instance?.id] });
+      clearGDriveTokens();
+      qc.invalidateQueries({ queryKey: ["drive-auth-status"] });
+      qc.invalidateQueries({ queryKey: ["drive-storage"] });
+      qc.invalidateQueries({ queryKey: ["drive-files"] });
       toast.success("Disconnected from Google Drive");
       navigate("/drive");
     } catch {
@@ -80,6 +102,55 @@ export function DriveSettingPage() {
     defaultPathMutation.mutate({ folderId: "root", folderName: "My Drive" });
   };
 
+  const handleSaveCredentials = () => {
+    setGDriveTokens({
+      accessToken: tokenInput.trim() || null,
+      clientId: clientIdInput.trim() || null,
+      clientSecret: clientSecretInput.trim() || null,
+      refreshToken: refreshTokenInput.trim() || null,
+      expiry: tokenInput.trim() ? Date.now() + 3500 * 1000 : null,
+    });
+    qc.invalidateQueries({ queryKey: ["drive-auth-status"] });
+    qc.invalidateQueries({ queryKey: ["drive-storage"] });
+    qc.invalidateQueries({ queryKey: ["drive-files"] });
+    toast.success("Google Drive credentials saved directly in browser!");
+  };
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    try {
+      const res = await directTestConnection();
+      toast.success(`Direct Connection Verified! Account: ${res.user} (${res.email})`);
+      refetchQuota();
+    } catch (err: any) {
+      toast.error(`Connection test failed: ${err.message}`);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleSyncFromServer = async () => {
+    setSyncingFromServer(true);
+    try {
+      const token = await getValidAccessToken(true);
+      if (token) {
+        setTokenInput(token);
+        const store = useAppStore.getState();
+        if (store.gdriveClientId) setClientIdInput(store.gdriveClientId);
+        if (store.gdriveClientSecret) setClientSecretInput(store.gdriveClientSecret);
+        if (store.gdriveRefreshToken) setRefreshTokenInput(store.gdriveRefreshToken);
+        toast.success("Successfully synchronized token from server!");
+        qc.invalidateQueries({ queryKey: ["drive-auth-status"] });
+        qc.invalidateQueries({ queryKey: ["drive-storage"] });
+        qc.invalidateQueries({ queryKey: ["drive-files"] });
+      }
+    } catch (err: any) {
+      toast.error(`Sync failed: ${err.message}`);
+    } finally {
+      setSyncingFromServer(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="space-y-6 max-w-3xl mx-auto py-4">
@@ -91,7 +162,7 @@ export function DriveSettingPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-3xl mx-auto pb-10">
       {/* Top Navigation & Title */}
       <div className="flex items-center gap-3">
         <button
@@ -111,19 +182,21 @@ export function DriveSettingPage() {
             {isAuthenticated ? (
               <Badge variant="success" className="gap-1 flex-shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                Connected
+                Direct API Active
               </Badge>
             ) : (
-              <Badge variant="danger" className="flex-shrink-0">Disconnected</Badge>
+              <Badge variant="danger" className="flex-shrink-0">
+                Disconnected
+              </Badge>
             )}
           </div>
           <p className="text-xs sm:text-sm text-text-secondary mt-0.5 truncate">
-            Storage quota, default upload folder, and account management
+            Direct client-side fetch configuration, storage quota, and account management
           </p>
         </div>
       </div>
 
-      {/* 1. Google Drive Storage Quota Card */}
+      {/* 1. Google Drive Storage Quota Card (Direct API) */}
       <div className="glass rounded-2xl p-5 border border-glass-border space-y-4 shadow-lg shadow-black/5">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2.5">
@@ -132,10 +205,10 @@ export function DriveSettingPage() {
             </div>
             <div>
               <h2 className="text-sm font-semibold text-text-primary">
-                Google Drive Storage
+                Google Drive Storage (Direct Fetch)
               </h2>
               <p className="text-xs text-text-muted">
-                Cloud capacity and allocation
+                Live quota directly queried from Google Drive API v3
               </p>
             </div>
           </div>
@@ -162,13 +235,19 @@ export function DriveSettingPage() {
           </div>
         ) : quota && quota.limit <= 0 ? (
           <div className="p-3 rounded-xl bg-surface-elevated text-xs text-text-secondary">
-            Storage: <span className="font-semibold text-text-primary">{formatBytes(quota.usage)}</span> used (Unlimited Cloud Storage)
+            Storage:{" "}
+            <span className="font-semibold text-text-primary">
+              {formatBytes(quota.usage)}
+            </span>{" "}
+            used (Unlimited Cloud Storage)
           </div>
         ) : (
-          <p className="text-xs text-text-muted">Storage information unavailable</p>
+          <p className="text-xs text-text-muted">
+            Storage information will appear once connected.
+          </p>
         )}
 
-        {/* Breakdown Badges: 2-column grid without redundant Remaining box */}
+        {/* Breakdown Badges */}
         {quota && (
           <div className="grid grid-cols-2 gap-3 pt-2 border-t border-glass-border/50 text-xs">
             <div className="p-3 rounded-xl bg-surface-elevated/60 border border-glass-border">
@@ -208,7 +287,102 @@ export function DriveSettingPage() {
         )}
       </div>
 
-      {/* 2. Default Upload Path Configuration */}
+      {/* 2. Direct API Credentials & Token Configuration */}
+      <div className="glass rounded-2xl p-5 border border-glass-border space-y-4 shadow-lg shadow-black/5">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-purple-500/15 flex items-center justify-center text-purple-400">
+              <Key className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-text-primary">
+                Direct API & OAuth Credentials
+              </h2>
+              <p className="text-xs text-text-muted">
+                Frontend fetches Google Drive API directly without backend routing
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSyncFromServer}
+              disabled={syncingFromServer}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-surface-elevated border border-glass-border hover:bg-glass-hover text-xs text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+              title="Sync saved token from VPS backend"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncingFromServer ? "animate-spin" : ""}`} />
+              <span>Sync from Server</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleTestConnection}
+              disabled={testingConnection || !isAuthenticated}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-medium transition-colors disabled:opacity-50 shadow-sm"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>{testingConnection ? "Testing..." : "Test Direct API"}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-3 pt-1">
+          <div>
+            <label className="text-xs font-semibold text-text-secondary block mb-1">
+              Google Drive Access Token
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="ya29.a0AfH6SM..."
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                className="w-full h-10 px-3 pr-24 rounded-xl text-xs bg-surface-elevated border border-glass-border text-text-primary placeholder:text-text-muted font-mono focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+              <button
+                type="button"
+                onClick={handleSaveCredentials}
+                className="absolute right-1.5 top-1.5 bottom-1.5 px-3 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent font-medium text-xs transition-colors flex items-center gap-1"
+              >
+                <Save className="w-3 h-3" />
+                <span>Save</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-text-muted mt-1">
+              Stored securely in browser LocalStorage. All /drive requests use this token directly.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label className="text-xs font-semibold text-text-secondary block mb-1">
+                Client ID (Optional for OAuth auto-refresh)
+              </label>
+              <input
+                type="text"
+                placeholder="xxxx.apps.googleusercontent.com"
+                value={clientIdInput}
+                onChange={(e) => setClientIdInput(e.target.value)}
+                className="w-full h-9 px-3 rounded-xl text-xs bg-surface-elevated border border-glass-border text-text-primary placeholder:text-text-muted font-mono focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-text-secondary block mb-1">
+                Client Secret (Optional)
+              </label>
+              <input
+                type="password"
+                placeholder="GOCSPX-xxxx"
+                value={clientSecretInput}
+                onChange={(e) => setClientSecretInput(e.target.value)}
+                className="w-full h-9 px-3 rounded-xl text-xs bg-surface-elevated border border-glass-border text-text-primary placeholder:text-text-muted font-mono focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Default Target Folder Configuration */}
       <div className="glass rounded-2xl p-5 border border-glass-border space-y-4 shadow-lg shadow-black/5">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-warning/15 flex items-center justify-center text-warning">
@@ -216,10 +390,10 @@ export function DriveSettingPage() {
           </div>
           <div>
             <h2 className="text-sm font-semibold text-text-primary">
-              Default Upload Path
+              Default Target Folder
             </h2>
             <p className="text-xs text-text-muted">
-              Google Drive target folder where completed torrent files are sent
+              Google Drive folder selected for default actions and uploads
             </p>
           </div>
         </div>
@@ -261,7 +435,7 @@ export function DriveSettingPage() {
         </div>
       </div>
 
-      {/* 3. Account & Connection Information */}
+      {/* 4. Account & Identity Management */}
       <div className="glass rounded-2xl p-5 border border-glass-border space-y-4 shadow-lg shadow-black/5">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400">
@@ -269,7 +443,7 @@ export function DriveSettingPage() {
           </div>
           <div>
             <h2 className="text-sm font-semibold text-text-primary">
-              Account & Connection
+              Account & Identity
             </h2>
             <p className="text-xs text-text-muted">
               Connected Google identity and session management
@@ -296,7 +470,7 @@ export function DriveSettingPage() {
                 {quota?.user_name || "Google Drive Account"}
               </p>
               <p className="text-xs text-text-secondary truncate mt-0.5">
-                {quota?.user_email || "OAuth connected session"}
+                {quota?.user_email || "Direct API Session"}
               </p>
             </div>
           </div>
@@ -307,7 +481,7 @@ export function DriveSettingPage() {
               onClick={() => setAuthModalOpen(true)}
               className="px-3 min-h-[38px] rounded-xl bg-surface-elevated border border-glass-border text-text-primary hover:bg-glass-hover text-xs font-medium transition-colors"
             >
-              Switch Account
+              Switch Account / Reconnect
             </button>
             <button
               type="button"
@@ -331,4 +505,3 @@ export function DriveSettingPage() {
     </div>
   );
 }
-

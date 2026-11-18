@@ -6,7 +6,7 @@ const DEFAULT_INSTANCES: Instance[] = [
   {
     id: "default-vps",
     name: "Production VPS (NYC)",
-    url: "https://mild-leaf.nyc.boxd.sh",
+    url: "https://keen-shore.nyc.boxd.sh",
     apiPrefix: "/api/v1",
     color: "#6366f1",
   },
@@ -61,6 +61,23 @@ interface AppState {
   setDriveDefaultFolder: (id: string | null, name: string | null) => void;
   driveDefaultLocalPath: string | null;
   setDriveDefaultLocalPath: (path: string | null) => void;
+
+  // Direct Google Drive OAuth & API Credentials (Direct client-side fetch)
+  gdriveAccessToken: string | null;
+  gdriveRefreshToken: string | null;
+  gdriveTokenExpiry: number | null;
+  gdriveClientId: string | null;
+  gdriveClientSecret: string | null;
+  gdriveApiKey: string | null;
+  setGDriveTokens: (tokens: {
+    accessToken?: string | null;
+    refreshToken?: string | null;
+    expiry?: number | null;
+    clientId?: string | null;
+    clientSecret?: string | null;
+    apiKey?: string | null;
+  }) => void;
+  clearGDriveTokens: () => void;
 
   // Reseed ratio tracking
   reseedRatios: Record<string, number>;
@@ -164,6 +181,29 @@ export const useAppStore = create<AppState>()(
       setDriveDefaultLocalPath: (path) =>
         set({ driveDefaultLocalPath: path }),
 
+      // Direct Google Drive OAuth & API Credentials
+      gdriveAccessToken: null,
+      gdriveRefreshToken: null,
+      gdriveTokenExpiry: null,
+      gdriveClientId: null,
+      gdriveClientSecret: null,
+      gdriveApiKey: null,
+      setGDriveTokens: (tokens) =>
+        set((state) => ({
+          gdriveAccessToken: tokens.accessToken !== undefined ? tokens.accessToken : state.gdriveAccessToken,
+          gdriveRefreshToken: tokens.refreshToken !== undefined ? tokens.refreshToken : state.gdriveRefreshToken,
+          gdriveTokenExpiry: tokens.expiry !== undefined ? tokens.expiry : state.gdriveTokenExpiry,
+          gdriveClientId: tokens.clientId !== undefined ? tokens.clientId : state.gdriveClientId,
+          gdriveClientSecret: tokens.clientSecret !== undefined ? tokens.clientSecret : state.gdriveClientSecret,
+          gdriveApiKey: tokens.apiKey !== undefined ? tokens.apiKey : state.gdriveApiKey,
+        })),
+      clearGDriveTokens: () =>
+        set({
+          gdriveAccessToken: null,
+          gdriveRefreshToken: null,
+          gdriveTokenExpiry: null,
+        }),
+
       // Reseed ratio tracking
       reseedRatios: {},
       saveTorrentRatio: (hash, name, ratio) => {
@@ -214,6 +254,12 @@ export const useAppStore = create<AppState>()(
         driveDefaultFolderId: state.driveDefaultFolderId,
         driveDefaultFolderName: state.driveDefaultFolderName,
         driveDefaultLocalPath: state.driveDefaultLocalPath,
+        gdriveAccessToken: state.gdriveAccessToken,
+        gdriveRefreshToken: state.gdriveRefreshToken,
+        gdriveTokenExpiry: state.gdriveTokenExpiry,
+        gdriveClientId: state.gdriveClientId,
+        gdriveClientSecret: state.gdriveClientSecret,
+        gdriveApiKey: state.gdriveApiKey,
         reseedRatios: state.reseedRatios,
         completedDriveUploads: state.completedDriveUploads,
       }),

@@ -24,7 +24,7 @@ describe("useAppStore", () => {
         {
           id: "default-vps",
           name: "Production VPS (NYC)",
-          url: "https://mild-leaf.nyc.boxd.sh",
+          url: "https://keen-shore.nyc.boxd.sh",
           apiPrefix: "/api/v1",
           color: "#6366f1",
         },
@@ -146,5 +146,33 @@ describe("useAppStore", () => {
     expect(useAppStore.getState().driveDefaultLocalPath).toBe("/downloads/anime");
     store.setDriveDefaultLocalPath(null);
     expect(useAppStore.getState().driveDefaultLocalPath).toBeNull();
+  });
+
+  it("stores and manages direct Google Drive tokens and credentials", () => {
+    const store = useAppStore.getState();
+    expect(store.gdriveAccessToken).toBeNull();
+
+    store.setGDriveTokens({
+      accessToken: "ya29.test-access-token",
+      refreshToken: "1//test-refresh-token",
+      clientId: "test-client-id",
+      clientSecret: "test-client-secret",
+      expiry: 1700000000000,
+    });
+
+    const state = useAppStore.getState();
+    expect(state.gdriveAccessToken).toBe("ya29.test-access-token");
+    expect(state.gdriveRefreshToken).toBe("1//test-refresh-token");
+    expect(state.gdriveClientId).toBe("test-client-id");
+    expect(state.gdriveClientSecret).toBe("test-client-secret");
+    expect(state.gdriveTokenExpiry).toBe(1700000000000);
+
+    store.clearGDriveTokens();
+    const clearedState = useAppStore.getState();
+    expect(clearedState.gdriveAccessToken).toBeNull();
+    expect(clearedState.gdriveRefreshToken).toBeNull();
+    expect(clearedState.gdriveTokenExpiry).toBeNull();
+    // Keeps client credentials intact across disconnects
+    expect(clearedState.gdriveClientId).toBe("test-client-id");
   });
 });

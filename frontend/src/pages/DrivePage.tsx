@@ -10,8 +10,10 @@ import {
   useRenameDriveFile,
   useBatchDeleteDriveFiles,
 } from "@/hooks/useDrive";
+import { directExchangeAuthCode, directDownloadFile } from "@/api/gdriveDirect";
 import { useQueryClient } from "@tanstack/react-query";
 import { useActiveInstance } from "@/hooks/useTorrents";
+import { useAppStore } from "@/stores/appStore";
 import { formatBytes, formatCompactDate, cn } from "@/lib/utils";
 import { UI_STRINGS } from "@/lib/strings";
 import { ListSkeleton, Skeleton } from "@/components/ui";
@@ -190,15 +192,15 @@ export function DrivePage() {
   // Auto-exchange OAuth code if redirected with ?code=...
   useEffect(() => {
     const code = searchParams.get("code");
-    if (code && api) {
+    if (code) {
       const redirectUri = `${window.location.origin}/drive`;
       toast.loading(S.oauthConnecting, { id: "gdrive-oauth" });
-      api
-        .exchangeAuthCode(code, redirectUri)
+      directExchangeAuthCode(code, redirectUri)
         .then((res) => {
           if (res.success) {
             toast.success(S.oauthConnected, { id: "gdrive-oauth" });
-            qc.invalidateQueries({ queryKey: ["drive-auth-status", instance?.id] });
+            qc.invalidateQueries({ queryKey: ["drive-auth-status"] });
+            qc.invalidateQueries({ queryKey: ["drive-files"] });
           } else {
             toast.error(res.message || S.oauthFailed, { id: "gdrive-oauth" });
           }
@@ -210,7 +212,7 @@ export function DrivePage() {
           navigate("/drive", { replace: true });
         });
     }
-  }, [searchParams, api, qc, instance?.id, navigate]);
+  }, [searchParams, qc, navigate]);
 
   const {
     data: filesData,
@@ -291,8 +293,28 @@ export function DrivePage() {
   };
 
   const handleDownload = async (file: DriveFileItem) => {
-    const downloadUrl = `/download.aspx?id=${file.id}&name=${encodeURIComponent(file.name)}`;
-    window.location.href = downloadUrl;
+    try {
+      toast.loading(`Downloading ${file.name}...`, { id: `dl-${file.id}` });
+      await directDownloadFile(file.id, file.name, file.mimeType, (p) => {
+        if (p.speed) {
+          toast.loading(`Downloading ${file.name} (${p.percent}% - ${p.speed})...`, { id: `dl-${file.id}` });
+        }
+      });
+      toast.success(`Download ready: ${file.name}`, { id: `dl-${file.id}` });
+    } catch {
+      // Direct browser fallback (webContentLink or /download.aspx with token)
+      const token = useAppStore.getState().gdriveAccessToken;
+      if (file.webContentLink) {
+        window.open(file.webContentLink, "_blank");
+        toast.dismiss(`dl-${file.id}`);
+      } else {
+        const fallbackUrl = `/download.aspx?id=${file.id}&name=${encodeURIComponent(file.name)}${
+          token ? `&token=${encodeURIComponent(token)}` : ""
+        }`;
+        window.location.href = fallbackUrl;
+        toast.dismiss(`dl-${file.id}`);
+      }
+    }
   };
 
   const handlePreview = (file: DriveFileItem) => {

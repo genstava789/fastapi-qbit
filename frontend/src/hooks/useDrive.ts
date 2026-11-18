@@ -1,11 +1,27 @@
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DriveApi } from "@/api/client";
+import {
+  directListFiles,
+  directGetFolderPath,
+  directGetFileMeta,
+  directCreateFolder,
+  directRenameFile,
+  directDeleteFile,
+  directBatchDeleteFiles,
+  directGetStorageQuota,
+  directEmptyTrash,
+  getValidAccessToken,
+  directGetAuthUrl,
+} from "@/api/gdriveDirect";
 import { useActiveInstance } from "@/hooks/useTorrents";
 import { useAppStore } from "@/stores/appStore";
 import type { DriveFileItem, DriveDownloadToServerItem } from "@/types";
 import toast from "react-hot-toast";
 
+/**
+ * Backend API client for server-side VPS tasks (e.g. uploading torrent files to Drive from VPS disk)
+ */
 export function useDriveApi() {
   const instance = useActiveInstance();
   return useMemo(() => {
@@ -14,88 +30,232 @@ export function useDriveApi() {
   }, [instance]);
 }
 
+/**
+ * Check Google Drive authentication status directly in frontend
+ */
 export function useDriveAuthStatus() {
-  const api = useDriveApi();
-  const instance = useActiveInstance();
-  return useQuery({
-    queryKey: ["drive-auth-status", instance?.id],
-    queryFn: () => api!.getAuthStatus(),
-    enabled: !!api,
-    refetchOnWindowFocus: true,
-    retry: 1,
-  });
-}
+  const gdriveAccessToken = useAppStore((s) => s.gdriveAccessToken);
+  const gdriveRefreshToken = useAppStore((s) => s.gdriveRefreshToken);
 
-export function useDriveFiles(folderId?: string, enabled: boolean = true) {
-  const api = useDriveApi();
-  const instance = useActiveInstance();
-  const normalizedFolderId = folderId || "root";
   return useQuery({
-    queryKey: ["drive-files", instance?.id, normalizedFolderId],
-    queryFn: () => api!.listFiles(normalizedFolderId),
-    enabled: !!api && enabled,
-    retry: false,
-  });
-}
-
-export function useDriveBreadcrumb(folderId?: string) {
-  const api = useDriveApi();
-  const instance = useActiveInstance();
-  return useQuery({
-    queryKey: ["drive-breadcrumb", instance?.id, folderId],
-    queryFn: () => api!.getFolderPath(folderId!),
-    enabled: !!api && !!folderId && folderId !== "root",
-    retry: false,
-  });
-}
-
-export function useDriveFileMeta(fileId?: string) {
-  const api = useDriveApi();
-  const instance = useActiveInstance();
-  return useQuery<DriveFileItem>({
-    queryKey: ["drive-file-meta", instance?.id || "fallback", fileId],
-    queryFn: async (): Promise<DriveFileItem> => {
-      if (api) {
-        return api.getFileMeta(fileId!);
+    queryKey: ["drive-auth-status", gdriveAccessToken, gdriveRefreshToken],
+    queryFn: async () => {
+      try {
+        const token = await getValidAccessToken();
+        if (token) {
+          return { authenticated: true, auth_url: null };
+        }
+      } catch {
+        // Not authenticated
       }
-      const resp = await fetch(
-        `https://mild-leaf.nyc.boxd.sh/api/v1/drive/files/${encodeURIComponent(fileId!)}/meta`
-      );
-      if (!resp.ok) throw new Error("Failed to load file metadata");
-      return resp.json() as Promise<DriveFileItem>;
+      return {
+        authenticated: false,
+        auth_url: directGetAuthUrl(),
+      };
     },
+    refetchOnWindowFocus: true,
+    retry: false,
+    staleTime: 10000,
+  });
+}
+
+/**
+ * List files and folders directly from Google Drive API v3 without backend
+ */
+export function useDriveFiles(folderId?: string, enabled = true) {
+  const normalizedFolderId = folderId || "root";
+  const gdriveAccessToken = useAppStore((s) => s.gdriveAccessToken);
+
+  return useQuery({
+    queryKey: ["drive-files", normalizedFolderId, gdriveAccessToken],
+    queryFn: () => directListFiles(normalizedFolderId),
+    enabled: enabled,
+    retry: false,
+    staleTime: 5000,
+  });
+}
+
+/**
+ * Build folder breadcrumbs directly from Google Drive API v3
+ */
+export function useDriveBreadcrumb(folderId?: string) {
+  const gdriveAccessToken = useAppStore((s) => s.gdriveAccessToken);
+
+  return useQuery({
+    queryKey: ["drive-breadcrumb", folderId, gdriveAccessToken],
+    queryFn: () => directGetFolderPath(folderId!),
+    enabled: !!folderId && folderId !== "root",
+    retry: false,
+    staleTime: 60000,
+  });
+}
+
+/**
+ * Fetch file metadata directly from Google Drive API v3
+ */
+export function useDriveFileMeta(fileId?: string) {
+  const gdriveAccessToken = useAppStore((s) => s.gdriveAccessToken);
+
+  return useQuery<DriveFileItem>({
+    queryKey: ["drive-file-meta", fileId, gdriveAccessToken],
+    queryFn: () => directGetFileMeta(fileId!),
     enabled: !!fileId,
     retry: 1,
+    staleTime: 30000,
   });
 }
 
-export function useDriveStorageQuota(enabled: boolean = true) {
-  const api = useDriveApi();
-  const instance = useActiveInstance();
+/**
+ * Fetch Google Drive storage quota and user info directly
+ */
+export function useDriveStorageQuota(enabled = true) {
+  const gdriveAccessToken = useAppStore((s) => s.gdriveAccessToken);
+
   return useQuery({
-    queryKey: ["drive-storage", instance?.id],
-    queryFn: () => api!.getStorageQuota(),
-    enabled: !!api && enabled,
+    queryKey: ["drive-storage", gdriveAccessToken],
+    queryFn: () => directGetStorageQuota(),
+    enabled: enabled,
     refetchInterval: enabled ? 30000 : false,
     retry: false,
   });
 }
 
+/**
+ * Empty Google Drive trash directly
+ */
 export function useDriveEmptyTrash() {
-  const api = useDriveApi();
   const qc = useQueryClient();
-  const instance = useActiveInstance();
   return useMutation({
-    mutationFn: () => api!.emptyTrash(),
+    mutationFn: () => directEmptyTrash(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["drive-storage", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["drive-storage"] });
       toast.success("Google Drive trash emptied");
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.detail || "Failed to empty Google Drive trash");
+      toast.error(err?.message || "Failed to empty Google Drive trash");
     },
   });
 }
+
+/**
+ * Create a new folder directly in Google Drive
+ */
+export function useCreateDriveFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, parentId }: { name: string; parentId?: string }) =>
+      directCreateFolder(name, parentId),
+    onSuccess: () => {
+      toast.success("Folder created!");
+      qc.invalidateQueries({ queryKey: ["drive-files"] });
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed to create folder: ${err.message}`);
+    },
+  });
+}
+
+/**
+ * Delete a file or folder directly in Google Drive
+ */
+export function useDeleteDriveFile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) => directDeleteFile(fileId),
+    onSuccess: () => {
+      toast.success("File deleted from Google Drive");
+      qc.invalidateQueries({ queryKey: ["drive-files"] });
+      qc.invalidateQueries({ queryKey: ["drive-storage"] });
+    },
+    onError: (err: any) => {
+      toast.error(`Failed to delete: ${err?.message || err}`);
+    },
+  });
+}
+
+/**
+ * Rename a file or folder directly in Google Drive
+ */
+export function useRenameDriveFile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fileId, newName }: { fileId: string; newName: string }) =>
+      directRenameFile(fileId, newName),
+    onSuccess: () => {
+      toast.success("File renamed");
+      qc.invalidateQueries({ queryKey: ["drive-files"] });
+    },
+    onError: (err: any) => {
+      toast.error(`Failed to rename: ${err?.message || err}`);
+    },
+  });
+}
+
+/**
+ * Batch delete files directly in Google Drive
+ */
+export function useBatchDeleteDriveFiles() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileIds: string[]) => directBatchDeleteFiles(fileIds),
+    onSuccess: (data) => {
+      if (data.deleted?.length > 0) {
+        toast.success(`${data.deleted.length} item(s) deleted from Drive`);
+      }
+      if (data.errors?.length > 0) {
+        toast.error(`Failed to delete ${data.errors.length} item(s)`);
+      }
+      qc.invalidateQueries({ queryKey: ["drive-files"] });
+      qc.invalidateQueries({ queryKey: ["drive-storage"] });
+    },
+    onError: (err: any) => {
+      toast.error(`Batch delete failed: ${err?.message || err}`);
+    },
+  });
+}
+
+/**
+ * Default upload path configuration stored in frontend appStore
+ */
+export function useDriveDefaultPath() {
+  const qc = useQueryClient();
+  const driveDefaultFolderId = useAppStore((s) => s.driveDefaultFolderId);
+  const driveDefaultFolderName = useAppStore((s) => s.driveDefaultFolderName);
+  const setDriveDefaultFolder = useAppStore((s) => s.setDriveDefaultFolder);
+
+  const query = useQuery({
+    queryKey: ["drive-default-path", driveDefaultFolderId, driveDefaultFolderName],
+    queryFn: () => ({
+      folder_id: driveDefaultFolderId,
+      folder_name: driveDefaultFolderName,
+    }),
+    initialData: {
+      folder_id: driveDefaultFolderId,
+      folder_name: driveDefaultFolderName,
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: async ({ folderId, folderName }: { folderId: string; folderName: string }) => {
+      setDriveDefaultFolder(folderId, folderName);
+      return { success: true };
+    },
+    onSuccess: (_data, { folderId, folderName }) => {
+      setDriveDefaultFolder(folderId, folderName);
+      toast.success("Default upload path updated!");
+      qc.invalidateQueries({ queryKey: ["drive-default-path"] });
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed to set default path: ${err.message}`);
+    },
+  });
+
+  return { query, mutation };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VPS Backend Server Actions (For uploading from VPS local disk or downloading to VPS storage)
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function useDriveUploads() {
   const api = useDriveApi();
@@ -196,110 +356,6 @@ export function useBatchUploadToDrive() {
   });
 }
 
-export function useCreateDriveFolder() {
-  const api = useDriveApi();
-  const qc = useQueryClient();
-  const instance = useActiveInstance();
-  return useMutation({
-    mutationFn: ({ name, parentId }: { name: string; parentId?: string }) =>
-      api!.createFolder(name, parentId),
-    onSuccess: () => {
-      toast.success("Folder created!");
-      qc.invalidateQueries({ queryKey: ["drive-files", instance?.id] });
-    },
-    onError: (err: Error) => {
-      toast.error(`Failed to create folder: ${err.message}`);
-    },
-  });
-}
-
-export function useDeleteDriveFile() {
-  const api = useDriveApi();
-  const qc = useQueryClient();
-  const instance = useActiveInstance();
-  return useMutation({
-    mutationFn: (fileId: string) => api!.deleteDriveFile(fileId),
-    onSuccess: () => {
-      toast.success("File deleted from Google Drive");
-      qc.invalidateQueries({ queryKey: ["drive-files", instance?.id] });
-      qc.invalidateQueries({ queryKey: ["drive-storage-quota", instance?.id] });
-    },
-    onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.message;
-      toast.error(`Failed to delete: ${msg}`);
-    },
-  });
-}
-
-export function useRenameDriveFile() {
-  const api = useDriveApi();
-  const qc = useQueryClient();
-  const instance = useActiveInstance();
-  return useMutation({
-    mutationFn: ({ fileId, newName }: { fileId: string; newName: string }) =>
-      api!.renameDriveFile(fileId, newName),
-    onSuccess: () => {
-      toast.success("File renamed");
-      qc.invalidateQueries({ queryKey: ["drive-files", instance?.id] });
-    },
-    onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.message;
-      toast.error(`Failed to rename: ${msg}`);
-    },
-  });
-}
-
-export function useBatchDeleteDriveFiles() {
-  const api = useDriveApi();
-  const qc = useQueryClient();
-  const instance = useActiveInstance();
-  return useMutation({
-    mutationFn: (fileIds: string[]) => api!.batchDeleteDriveFiles(fileIds),
-    onSuccess: (data) => {
-      if (data.deleted?.length > 0) {
-        toast.success(`${data.deleted.length} item(s) deleted from Drive`);
-      }
-      if (data.errors?.length > 0) {
-        toast.error(`Failed to delete ${data.errors.length} item(s)`);
-      }
-      qc.invalidateQueries({ queryKey: ["drive-files", instance?.id] });
-      qc.invalidateQueries({ queryKey: ["drive-storage-quota", instance?.id] });
-    },
-    onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.message;
-      toast.error(`Batch delete failed: ${msg}`);
-    },
-  });
-}
-
-export function useDriveDefaultPath() {
-  const api = useDriveApi();
-  const instance = useActiveInstance();
-  const qc = useQueryClient();
-  const setDriveDefaultFolder = useAppStore((s) => s.setDriveDefaultFolder);
-
-  const query = useQuery({
-    queryKey: ["drive-default-path", instance?.id],
-    queryFn: () => api!.getDefaultPath(),
-    enabled: !!api,
-  });
-
-  const mutation = useMutation({
-    mutationFn: ({ folderId, folderName }: { folderId: string; folderName: string }) =>
-      api!.setDefaultPath(folderId, folderName),
-    onSuccess: (_data, { folderId, folderName }) => {
-      setDriveDefaultFolder(folderId, folderName);
-      toast.success("Default upload path updated!");
-      qc.invalidateQueries({ queryKey: ["drive-default-path", instance?.id] });
-    },
-    onError: (err: Error) => {
-      toast.error(`Failed to set default path: ${err.message}`);
-    },
-  });
-
-  return { query, mutation };
-}
-
 export function useDriveDownloads() {
   const api = useDriveApi();
   const instance = useActiveInstance();
@@ -343,7 +399,7 @@ export function useDownloadToServer() {
       destinationPath?: string;
       autoAttachReseed?: boolean;
     }) => api!.startDownloadToServer(items, destinationPath, autoAttachReseed),
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       const count = variables.items.length;
       toast.success(
         count > 1
@@ -375,4 +431,3 @@ export function useCancelDownloadToServer() {
     },
   });
 }
-

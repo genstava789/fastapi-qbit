@@ -10,6 +10,7 @@ import {
 import { formatBytes, formatCompactDate } from "@/lib/utils";
 import { UI_STRINGS } from "@/lib/strings";
 import { Skeleton, Badge } from "@/components/ui";
+import { useAppStore } from "@/stores/appStore";
 import type { DriveBreadcrumb } from "@/types";
 import {
   ArrowLeft,
@@ -172,8 +173,11 @@ export function FilePreviewPage() {
   const category = getFileCategory(file?.mimeType || "", displayName);
 
   // Cloudflare Edge Proxy Download URL: /download.aspx?id=:id&name=:name
+  const gdriveToken = useAppStore((s) => s.gdriveAccessToken);
+  const tokenParam = gdriveToken ? `&token=${encodeURIComponent(gdriveToken)}` : "";
+
   const proxyDownloadUrl = fileId
-    ? `/download.aspx?id=${fileId}&name=${encodeURIComponent(displayName)}`
+    ? `/download.aspx?id=${fileId}&name=${encodeURIComponent(displayName)}${tokenParam}`
     : `/download.aspx?name=${encodeURIComponent(displayName)}`;
   const fullDownloadUrl =
     typeof window !== "undefined"
@@ -182,7 +186,7 @@ export function FilePreviewPage() {
 
   // Inline stream for video/audio players via Cloudflare Edge
   const streamUrl = fileId
-    ? `/file/${fileId}/${encodeURIComponent(displayName)}?inline=true`
+    ? `/file/${fileId}/${encodeURIComponent(displayName)}?inline=true${tokenParam}`
     : proxyDownloadUrl;
 
   const previewPageUrl = fileId

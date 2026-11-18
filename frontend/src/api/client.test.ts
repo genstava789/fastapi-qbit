@@ -8,7 +8,7 @@ vi.mock("axios", () => {
     post: vi.fn(),
     delete: vi.fn(),
     patch: vi.fn(),
-    defaults: { baseURL: "https://mild-leaf.nyc.boxd.sh/api/v1" },
+    defaults: { baseURL: "https://keen-shore.nyc.boxd.sh/api/v1" },
   };
   return {
     default: {
@@ -23,13 +23,13 @@ describe("QbitApi client", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    api = new QbitApi("https://mild-leaf.nyc.boxd.sh", "/api/v1");
+    api = new QbitApi("https://keen-shore.nyc.boxd.sh", "/api/v1");
     mockClient = (axios.create as any).mock.results[0].value;
   });
 
   it("constructs export torrent URL properly", () => {
     expect(api.getExportUrl("abc123")).toBe(
-      "https://mild-leaf.nyc.boxd.sh/api/v1/torrents/abc123/export"
+      "https://keen-shore.nyc.boxd.sh/api/v1/torrents/abc123/export"
     );
   });
 
@@ -175,7 +175,7 @@ describe("DriveApi client", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    driveApi = new DriveApi("https://mild-leaf.nyc.boxd.sh", "/api/v1");
+    driveApi = new DriveApi("https://keen-shore.nyc.boxd.sh", "/api/v1");
     mockClient = (axios.create as any).mock.results[0].value;
   });
 

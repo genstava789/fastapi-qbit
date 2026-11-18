@@ -42,7 +42,16 @@ const GDOC_EXPORT_FORMATS: Record<string, { mime: string; ext: string }> = {
 /**
  * Obtain a valid Google Drive OAuth access token.
  */
-async function getAccessToken(backendBase: string, env: Env, forceRefresh = false): Promise<string> {
+async function getAccessToken(
+  backendBase: string,
+  env: Env,
+  forceRefresh = false,
+  explicitToken?: string | null
+): Promise<string> {
+  if (explicitToken && !forceRefresh) {
+    return explicitToken;
+  }
+
   const now = Date.now();
   if (!forceRefresh && cachedToken && cachedToken.expiresAt > now + 60000) {
     return cachedToken.accessToken;
@@ -131,14 +140,19 @@ async function streamGoogleDriveFile(
   request: Request
 ): Promise<Response> {
   const clientRange = request.headers.get("Range");
+  const reqUrl = new URL(request.url);
+  const explicitToken =
+    reqUrl.searchParams.get("token") ||
+    request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ||
+    null;
 
   try {
-    let token = await getAccessToken(backendBase, env);
+    let token = await getAccessToken(backendBase, env, false, explicitToken);
     let meta = await fetchFileMetadata(fileId, token);
 
     // If metadata fetch failed with 401, refresh token and retry
     if (!meta) {
-      token = await getAccessToken(backendBase, env, true);
+      token = await getAccessToken(backendBase, env, true, explicitToken);
       meta = await fetchFileMetadata(fileId, token);
     }
 
@@ -362,7 +376,7 @@ export default {
     const backendBase =
       url.searchParams.get("backend") ||
       env.DEFAULT_BACKEND_URL ||
-      "https://mild-leaf.nyc.boxd.sh";
+      "https://keen-shore.nyc.boxd.sh";
 
     // ── Check Request Destination & Purpose ─────────────────────────────────
     // Browser page navigation (address bar, link click, page refresh F5) sends:

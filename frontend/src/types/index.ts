@@ -180,6 +180,10 @@ export interface DriveFileItem {
   parents: string[] | null;
   parentId?: string | null;
   breadcrumbs?: DriveBreadcrumb[] | null;
+  webViewLink?: string | null;
+  webContentLink?: string | null;
+  iconLink?: string | null;
+  thumbnailLink?: string | null;
 }
 
 export interface DriveListResponse {
