@@ -399,13 +399,16 @@ export function useDownloadToServer() {
       destinationPath?: string;
       autoAttachReseed?: boolean;
     }) => {
+      if (!api) {
+        throw new Error("Backend server is not connected. Please check your active instance.");
+      }
       let token: string | undefined;
       try {
         token = await getValidAccessToken();
       } catch {
         token = useAppStore.getState().gdriveAccessToken || undefined;
       }
-      return api!.startDownloadToServer(items, destinationPath, autoAttachReseed, token);
+      return api.startDownloadToServer(items, destinationPath, autoAttachReseed, token);
     },
     onSuccess: (_data, variables) => {
       const count = variables.items.length;
@@ -415,6 +418,8 @@ export function useDownloadToServer() {
           : `Started pulling '${variables.items[0]?.name || "file"}' to server!`
       );
       qc.invalidateQueries({ queryKey: ["drive-downloads", instance?.id] });
+      qc.invalidateQueries({ queryKey: ["local-files"] });
+      qc.invalidateQueries({ queryKey: ["server-paths"] });
     },
     onError: (err: any) => {
       const msg = err.response?.data?.detail || err.message;

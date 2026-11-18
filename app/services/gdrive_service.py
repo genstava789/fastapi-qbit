@@ -139,7 +139,7 @@ class GDriveService:
             return False
 
     def get_credentials(self) -> Optional[Credentials]:
-        """Load credentials from token.json, refresh if expired."""
+        """Load credentials from token.json, refresh if expired, or return direct Credentials."""
         if not os.path.exists(TOKEN_FILE) or os.path.getsize(TOKEN_FILE) == 0:
             return None
         try:
@@ -147,11 +147,32 @@ class GDriveService:
                 content = f.read().strip()
                 if not content or content == "{}":
                     return None
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                with open(TOKEN_FILE, "w") as token_file:
-                    token_file.write(creds.to_json())
+            data = json.loads(content)
+            if not isinstance(data, dict):
+                return None
+
+            creds = None
+            if data.get("refresh_token"):
+                try:
+                    creds = Credentials.from_authorized_user_info(data, SCOPES)
+                    if creds and creds.expired and creds.refresh_token:
+                        creds.refresh(Request())
+                        with open(TOKEN_FILE, "w") as token_file:
+                            token_file.write(creds.to_json())
+                except Exception as ex:
+                    logger.debug(f"from_authorized_user_info refresh failed: {ex}")
+
+            if not creds or not creds.valid:
+                token_val = data.get("token") or data.get("access_token")
+                if token_val:
+                    creds = Credentials(
+                        token=token_val,
+                        token_uri=data.get("token_uri", "https://oauth2.googleapis.com/token"),
+                        client_id=data.get("client_id"),
+                        client_secret=data.get("client_secret"),
+                        scopes=SCOPES,
+                    )
+
             if creds and creds.valid:
                 return creds
             return None
@@ -604,27 +625,42 @@ class GDriveService:
         client_secret: Optional[str] = None,
     ) -> None:
         """Save a synchronized Google Drive token from client to server token.json."""
+        existing_data: Dict[str, Any] = {}
+        if os.path.exists(TOKEN_FILE):
+            try:
+                with open(TOKEN_FILE, "r") as f:
+                    existing_data = json.load(f)
+            except Exception:
+                pass
+
+        eff_refresh = refresh_token or existing_data.get("refresh_token")
+        if not client_id:
+            client_id = existing_data.get("client_id")
+        if not client_secret:
+            client_secret = existing_data.get("client_secret")
+
         token_data: Dict[str, Any] = {
             "token": access_token,
             "token_uri": "https://oauth2.googleapis.com/token",
             "scopes": SCOPES,
         }
-        if refresh_token:
-            token_data["refresh_token"] = refresh_token
+        if eff_refresh:
+            token_data["refresh_token"] = eff_refresh
 
-        # Load client credentials from credentials.json if not provided
-        creds_path = self._get_credentials_path()
-        if os.path.exists(creds_path):
-            try:
-                with open(creds_path) as f:
-                    cdata = json.load(f)
-                    winfo = cdata.get("web") or cdata.get("installed") or {}
-                    if not client_id:
-                        client_id = winfo.get("client_id")
-                    if not client_secret:
-                        client_secret = winfo.get("client_secret")
-            except Exception:
-                pass
+        # Load client credentials from credentials.json if still not provided
+        if not client_id or not client_secret:
+            creds_path = self._get_credentials_path()
+            if os.path.exists(creds_path):
+                try:
+                    with open(creds_path) as f:
+                        cdata = json.load(f)
+                        winfo = cdata.get("web") or cdata.get("installed") or {}
+                        if not client_id:
+                            client_id = winfo.get("client_id")
+                        if not client_secret:
+                            client_secret = winfo.get("client_secret")
+                except Exception:
+                    pass
 
         if client_id:
             token_data["client_id"] = client_id
@@ -701,9 +737,36 @@ class GDriveService:
         target_path: str,
         state: DownloadState,
         base_downloaded: int = 0,
+        mime_type: Optional[str] = None,
     ) -> int:
-        """Stream a single file from Google Drive into target_path with speed tracking."""
-        resp = self.open_download_stream(file_id, access_token=state.access_token)
+        """Stream a single file or export document from Google Drive into target_path with speed tracking."""
+        export_mime = None
+        if mime_type:
+            WORKSPACE_EXPORTS = {
+                "application/vnd.google-apps.document": (
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ".docx",
+                ),
+                "application/vnd.google-apps.spreadsheet": (
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ".xlsx",
+                ),
+                "application/vnd.google-apps.presentation": (
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    ".pptx",
+                ),
+                "application/vnd.google-apps.drawing": ("image/png", ".png"),
+            }
+            if mime_type in WORKSPACE_EXPORTS:
+                export_mime, ext_to_add = WORKSPACE_EXPORTS[mime_type]
+                if ext_to_add and not target_path.lower().endswith(ext_to_add):
+                    target_path += ext_to_add
+
+        resp = self.open_download_stream(
+            file_id,
+            access_token=state.access_token,
+            export_mime_type=export_mime,
+        )
         if resp.status_code >= 400:
             error_body = resp.text
             raise RuntimeError(
@@ -730,6 +793,15 @@ class GDriveService:
 
         with open(part_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=chunk_size):
+                if state.status == "failed":
+                    resp.close()
+                    if os.path.exists(part_path):
+                        try:
+                            os.remove(part_path)
+                        except OSError:
+                            pass
+                    return 0
+
                 if chunk:
                     f.write(chunk)
                     downloaded_in_file += len(chunk)
@@ -792,6 +864,8 @@ class GDriveService:
         def download_contents(fid: str, current_dir: str):
             children = scan_items(fid)
             for child in children:
+                if state.status == "failed":
+                    return
                 c_name = child.get("name", "unnamed")
                 c_id = child["id"]
                 c_mime = child.get("mimeType", "")
@@ -802,7 +876,11 @@ class GDriveService:
                 else:
                     c_path = os.path.join(current_dir, c_name)
                     self._download_single_file(
-                        c_id, c_path, state, base_downloaded=state.bytes_downloaded
+                        c_id,
+                        c_path,
+                        state,
+                        base_downloaded=state.bytes_downloaded,
+                        mime_type=c_mime,
                     )
 
         if state.total_bytes == 0:
@@ -830,21 +908,42 @@ class GDriveService:
 
         try:
             state.status = "downloading"
+            creds = None
             if state.access_token:
                 from google.oauth2.credentials import Credentials
-                from googleapiclient.discovery import build
-                service = build("drive", "v3", credentials=Credentials(token=state.access_token))
+                creds = Credentials(token=state.access_token)
             else:
-                service = self._build_service()
+                creds = self.get_credentials()
 
+            if not creds:
+                raise RuntimeError("Not authenticated with Google Drive.")
+
+            from googleapiclient.discovery import build
+            service = build("drive", "v3", credentials=creds)
+
+            mime_type = None
             try:
                 meta = service.files().get(
                     fileId=state.file_id,
-                    fields="id, name, mimeType, size",
+                    fields="id, name, mimeType, size, shortcutDetails",
                     supportsAllDrives=True,
                 ).execute()
                 if meta:
-                    if meta.get("mimeType") == "application/vnd.google-apps.folder":
+                    mime_type = meta.get("mimeType")
+                    if mime_type == "application/vnd.google-apps.shortcut":
+                        target_id = meta.get("shortcutDetails", {}).get("targetId")
+                        if target_id:
+                            state.file_id = target_id
+                            target_meta = service.files().get(
+                                fileId=target_id,
+                                fields="id, name, mimeType, size",
+                                supportsAllDrives=True,
+                            ).execute()
+                            if target_meta:
+                                meta = target_meta
+                                mime_type = target_meta.get("mimeType")
+
+                    if mime_type == "application/vnd.google-apps.folder":
                         state.is_directory = True
                     if meta.get("size") and not state.total_bytes:
                         state.total_bytes = int(meta["size"])
@@ -853,13 +952,19 @@ class GDriveService:
             except Exception as meta_err:
                 logger.debug(f"Could not refresh metadata for {state.file_id}: {meta_err}")
 
+            clean_dest = os.path.normpath(state.destination_path)
             if state.is_directory:
                 self._download_directory_recursive(
-                    service, state.file_id, state.destination_path, state.filename, state
+                    service, state.file_id, clean_dest, state.filename, state
                 )
             else:
-                target_path = os.path.join(state.destination_path, state.filename)
-                self._download_single_file(state.file_id, target_path, state)
+                target_path = os.path.join(clean_dest, state.filename)
+                self._download_single_file(
+                    state.file_id, target_path, state, mime_type=mime_type
+                )
+
+            if state.status == "failed":
+                return
 
             state.progress_percent = 100.0
             if state.total_bytes > 0:
@@ -1073,21 +1178,64 @@ class GDriveService:
         file_id: str,
         range_header: Optional[str] = None,
         access_token: Optional[str] = None,
+        export_mime_type: Optional[str] = None,
     ):
-        """Open a streaming connection to Google Drive API v3 alt=media with range header support."""
+        """Open a streaming connection to Google Drive API v3 alt=media or export with range header support."""
         import requests
+        from urllib.parse import quote
+
+        token = None
         if access_token:
             token = access_token
         else:
             creds = self.get_credentials()
-            if not creds:
-                raise RuntimeError("Not authenticated with Google Drive.")
-            token = creds.token
-        url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&supportsAllDrives=true"
+            if creds and creds.token:
+                token = creds.token
+
+        if not token:
+            creds = self.get_credentials()
+            if creds and creds.token:
+                token = creds.token
+
+        if not token:
+            raise RuntimeError("Not authenticated with Google Drive.")
+
         headers = {"Authorization": f"Bearer {token}"}
         if range_header:
             headers["Range"] = range_header
-        return requests.get(url, headers=headers, stream=True, timeout=60)
+
+        if export_mime_type:
+            url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType={quote(export_mime_type)}&supportsAllDrives=true"
+        else:
+            url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&supportsAllDrives=true"
+
+        resp = requests.get(url, headers=headers, stream=True, timeout=60)
+
+        # If 401 Unauthorized, refresh if possible and retry once
+        if resp.status_code == 401:
+            try:
+                creds = self.get_credentials()
+                if creds:
+                    if creds.refresh_token:
+                        creds.refresh(Request())
+                        with open(TOKEN_FILE, "w") as token_file:
+                            token_file.write(creds.to_json())
+                    headers["Authorization"] = f"Bearer {creds.token}"
+                    resp = requests.get(url, headers=headers, stream=True, timeout=60)
+            except Exception as e:
+                logger.debug(f"Refresh retry in open_download_stream failed: {e}")
+
+        # If 403 Forbidden with Docs Editors error, fallback to export as PDF
+        if resp.status_code == 403 and not export_mime_type:
+            try:
+                body_sample = resp.text
+                if "Docs Editors files" in body_sample or "export" in body_sample.lower():
+                    pdf_url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType=application%2Fpdf&supportsAllDrives=true"
+                    resp = requests.get(url=pdf_url, headers=headers, stream=True, timeout=60)
+            except Exception:
+                pass
+
+        return resp
 
     def logout(self) -> None:
         """Delete token.json to log out."""

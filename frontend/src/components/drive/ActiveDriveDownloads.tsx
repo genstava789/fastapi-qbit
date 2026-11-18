@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useDriveDownloads,
   useClearCompletedDownloads,
@@ -11,6 +12,7 @@ import { HardDriveDownload, X, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
 export function ActiveDriveDownloads() {
+  const qc = useQueryClient();
   const { data: downloads } = useDriveDownloads();
   const clearCompleted = useClearCompletedDownloads();
   const cancelTask = useCancelDownloadToServer();
@@ -63,13 +65,15 @@ export function ActiveDriveDownloads() {
     }
 
     if (hasCompleted) {
+      qc.invalidateQueries({ queryKey: ["local-files"] });
+      qc.invalidateQueries({ queryKey: ["server-paths"] });
       // Delay slightly (2.5s) so 100% progress state is visible before clearing
       const timer = setTimeout(() => {
         clearCompleted.mutate();
       }, 2500);
       return () => clearTimeout(timer);
     }
-  }, [downloads, clearCompleted, openAddTorrentWithPrefill]);
+  }, [downloads, clearCompleted, openAddTorrentWithPrefill, qc]);
 
   // Show tasks currently in progress (downloading, pending, or failed)
   const activeTasks =
