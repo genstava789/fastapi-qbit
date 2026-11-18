@@ -107,9 +107,13 @@ export async function getValidAccessToken(forceRefresh = false): Promise<string>
   if (activeInstance?.url) {
     try {
       const backendUrl = `${activeInstance.url.replace(/\/+$/, "")}${activeInstance.apiPrefix || "/api/v1"}/drive/token`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
       const backendRes = await fetch(backendUrl, {
         headers: { Accept: "application/json" },
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (backendRes.ok) {
         const data = await backendRes.json();
         if (data.access_token) {

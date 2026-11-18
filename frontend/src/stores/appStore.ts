@@ -100,6 +100,23 @@ interface AppState {
   }) => void;
 }
 
+function sanitizeInstances(instances: Instance[]): Instance[] {
+  if (!Array.isArray(instances) || instances.length === 0) {
+    return DEFAULT_INSTANCES;
+  }
+  return instances.map((inst) => {
+    // If instance points to decommissioned boxd host, update to current production VPS
+    if (inst.url?.includes("mild-leaf") || inst.id === "default-vps") {
+      return {
+        ...inst,
+        url: "https://keen-shore.nyc.boxd.sh",
+        name: inst.name || "Production VPS (NYC)",
+      };
+    }
+    return inst;
+  });
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -247,8 +264,28 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "qbit-ui-storage",
+      version: 1,
+      migrate: (persistedState: any, _version: number) => {
+        if (persistedState && typeof persistedState === "object") {
+          const state = persistedState as any;
+          if (Array.isArray(state.instances)) {
+            state.instances = sanitizeInstances(state.instances);
+          } else {
+            state.instances = DEFAULT_INSTANCES;
+          }
+        }
+        return persistedState;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state && Array.isArray(state.instances)) {
+          state.instances = sanitizeInstances(state.instances);
+          if (!state.activeInstanceId || !state.instances.some((i) => i.id === state.activeInstanceId)) {
+            state.activeInstanceId = state.instances[0]?.id || "default-vps";
+          }
+        }
+      },
       partialize: (state) => ({
-        instances: state.instances.length > 0 ? state.instances : DEFAULT_INSTANCES,
+        instances: sanitizeInstances(state.instances),
         activeInstanceId: state.activeInstanceId || "default-vps",
         sidebarOpen: state.sidebarOpen,
         driveDefaultFolderId: state.driveDefaultFolderId,

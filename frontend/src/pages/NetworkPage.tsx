@@ -31,7 +31,7 @@ export function NetworkPage() {
   const [targets, setTargets] = useState<ConnectivityResult[]>([
     {
       name: "Active API Backend",
-      host: instance?.url || "https://mild-leaf.nyc.boxd.sh",
+      host: instance?.url || "https://keen-shore.nyc.boxd.sh",
       status: "idle",
     },
     {

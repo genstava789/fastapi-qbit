@@ -75,7 +75,7 @@ function StatCard({
 }
 
 export function DashboardPage() {
-  const { data: torrents, isLoading } = useTorrents();
+  const { data: torrents, isLoading, isError, refetch } = useTorrents();
   const { data: health } = useHealth();
   const instance = useActiveInstance();
   const [speedHistory, setSpeedHistory] = useState<
@@ -169,6 +169,22 @@ export function DashboardPage() {
           {health?.qbittorrent_connected ? "Connected" : "Disconnected"}
         </p>
       </div>
+
+      {isError && (
+        <div className="flex items-center justify-between p-4 rounded-xl bg-danger/10 border border-danger/20 text-danger text-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>Tidak dapat terhubung ke backend {instance.url}. Pastikan backend aktif atau sesuaikan di Pengaturan.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="text-xs px-3 py-1.5 rounded-lg bg-danger/20 hover:bg-danger/30 font-medium transition-colors"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

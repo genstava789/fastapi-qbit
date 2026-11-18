@@ -27,7 +27,7 @@ import type {
 export function createApiClient(baseUrl: string, apiPrefix = "/api/v1"): AxiosInstance {
   return axios.create({
     baseURL: `${baseUrl}${apiPrefix}`,
-    timeout: 30000,
+    timeout: 10000,
     headers: { "Content-Type": "application/json" },
   });
 }
